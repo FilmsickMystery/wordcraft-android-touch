@@ -43,6 +43,7 @@
 ArtCraft Android Builder produces locally-signed, 64-bit ARM (`arm64-v8a`) Android APKs from official upstream repositories of the ArtCraft suite. It uses a hybrid approach where desktop-native egui/eframe applications are wrapped with Android-specific launchers without modifying the upstream source (except for minor automated patches).
 
 **Core Principles:**
+- **Strict Upstream Boundary**: **NEVER** edit, modify, or propose fixes requiring changes inside `source/` (`ArtCraft Android/source/`). The developer is *only* developing ArtCraft Android (`adapters/`, `templates/`, `lib/`, `vendor/`, `build.sh`). Upstream source contains desktop repositories cloned during build and is wiped by `clean.sh`.
 - **Zero-touch app migration**: Upstream source remains desktop-agnostic
 - **Template-based generation**: Shared Java/Rust templates provide common Android functionality
 - **App-specific adapters**: Complex apps can have custom ports
@@ -1232,6 +1233,11 @@ adb shell appops set com.artcraft.<app> MANAGE_EXTERNAL_STORAGE allow
 ## 35. Agent Guidelines
 
 ### 35.1 General Principles
+- **Strict Upstream Boundary (MANDATORY)**:
+  - **NEVER** edit, modify, or propose fixes that require changing files inside `source/` (`ArtCraft Android/source/`).
+  - `source/` contains upstream desktop application repositories cloned during build and is wiped by `clean.sh`.
+  - The developer is **only** developing ArtCraft Android (`adapters/`, `templates/`, `lib/`, `vendor/`, `build.sh`).
+  - All fixes, workarounds, adapters, and improvements MUST be implemented strictly within the ArtCraft Android repository scope (`adapters/`, `templates/`, `lib/`, `vendor/`).
 - **Read before modifying**: Always understand existing code patterns
 - **Preserve upstream**: Don't modify upstream source in `source/`, use patches/adapters
 - **Test on device**: Use connected tablet via ADB for validation
