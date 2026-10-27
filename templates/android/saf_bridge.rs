@@ -103,6 +103,10 @@ mod saf {
         }
 
         pub fn request_open(&self, id: u64, multiple: bool) -> Result<(), String> {
+            self.request_open_with_extensions(id, multiple, "")
+        }
+
+        pub fn request_open_with_extensions(&self, id: u64, multiple: bool, extensions: &str) -> Result<(), String> {
             self.vm
                 .attach_current_thread(|env| -> jni::errors::Result<()> {
                     // AndroidApp returns an unowned global ref. Do not delete it when this wrapper drops.
@@ -110,12 +114,27 @@ mod saf {
                     // SAFETY: AndroidApp retains this global Activity reference; as_cast_raw borrows it
                     // without taking ownership or attempting to delete the reference.
                     let activity = unsafe { env.as_cast_raw::<JObject>(&activity_raw)? };
-                    env.call_method(
-                        &*activity,
-                        jni_str!("safRequestOpen"),
-                        jni_sig!("(JZ)V"),
-                        &[JValue::Long(id as i64), JValue::Bool(multiple)],
-                    )?;
+                    if !extensions.is_empty() {
+                        let ext_name = env.new_string(extensions)?;
+                        let ext_obj = JObject::from(ext_name);
+                        env.call_method(
+                            &*activity,
+                            jni_str!("safRequestOpen"),
+                            jni_sig!("(JZLjava/lang/String;)V"),
+                            &[
+                                JValue::Long(id as i64),
+                                JValue::Bool(multiple),
+                                JValue::Object(&ext_obj),
+                            ],
+                        )?;
+                    } else {
+                        env.call_method(
+                            &*activity,
+                            jni_str!("safRequestOpen"),
+                            jni_sig!("(JZ)V"),
+                            &[JValue::Long(id as i64), JValue::Bool(multiple)],
+                        )?;
+                    }
                     Ok(())
                 })
                 .map_err(|e| e.to_string())

@@ -60,7 +60,7 @@ impl AndroidFileBridge {
         })
     }
 
-    fn request_open(&self, id: u64, multiple: bool) -> Result<(), String> {
+    fn request_open(&self, id: u64, multiple: bool, extensions: &str) -> Result<(), String> {
         self.vm
             .attach_current_thread(|env| -> jni::errors::Result<()> {
                 // AndroidApp returns an unowned global ref. Do not delete it when this wrapper drops.
@@ -68,11 +68,17 @@ impl AndroidFileBridge {
                 // SAFETY: AndroidApp retains this global Activity reference; as_cast_raw borrows it
                 // without taking ownership or attempting to delete the reference.
                 let activity = unsafe { env.as_cast_raw::<JObject>(&activity_raw)? };
+                let ext_name = env.new_string(extensions)?;
+                let ext_obj = JObject::from(ext_name);
                 env.call_method(
                     &*activity,
                     jni_str!("pcRequestOpen"),
-                    jni_sig!("(JZ)V"),
-                    &[JValue::Long(id as i64), JValue::Bool(multiple)],
+                    jni_sig!("(JZLjava/lang/String;)V"),
+                    &[
+                        JValue::Long(id as i64),
+                        JValue::Bool(multiple),
+                        JValue::Object(&ext_obj),
+                    ],
                 )?;
                 Ok(())
             })
@@ -251,12 +257,20 @@ impl PickerState {
     ) {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed).wrapping_add(1);
         let launch_result = match request {
-            FileDialogRequest::Open { multiple, .. } => {
+            FileDialogRequest::Open {
+                multiple,
+                extensions,
+                ..
+            } => {
                 self.replies
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
                     .insert(id, reply);
-                bridge.request_open(id, multiple)
+                let ext_str = extensions
+                    .as_ref()
+                    .map(|exts| exts.join(","))
+                    .unwrap_or_default();
+                bridge.request_open(id, multiple, &ext_str)
             }
             FileDialogRequest::Save { suggested } => {
                 let name = Path::new(&suggested)
@@ -873,6 +887,25 @@ fn android_main(android_app: AndroidApp) {
             .with_tag("com.artcraft.photocraft"),
     );
     log::info!("{ANDROID_SHELL_MARKER} ready; {}", ime_bridge::ime::IME_MARKER);
+
+    // Initialize Rayon's global thread pool to leverage all available CPU cores for
+    // parallel image tile/band processing and Wasm filter execution.
+    let num_cpus = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4)
+        .max(2);
+
+    if let Err(error) = rayon::ThreadPoolBuilder::new()
+        .num_threads(num_cpus)
+        .stack_size(2 * 1024 * 1024)
+        .thread_name(|i| format!("pc-worker-{i}"))
+        .build_global()
+    {
+        log::warn!("Rayon global thread pool initialization note: {error}");
+    } else {
+        log::info!("Rayon global thread pool initialized with {num_cpus} worker threads (stack: 2MB)");
+    }
+
     egui_winit::android_activity::set_activity(android_app.activity_as_ptr());
     system_fonts::install_font_env(&android_app);
     let bridge = match AndroidFileBridge::new(android_app.clone()) {
