@@ -14,7 +14,7 @@ flowchart TD
     
     subgraph BuildJob ["build (matrix per app)"]
         SetupToolchain[Setup Python 3.12, Java 21, Rust ARM64, NDK]
-        RestoreCaches[Restore Caches: Gradle, Cargo, sccache GHA]
+        RestoreCaches[Restore Caches: Gradle, Cargo, sccache]
         ResolveSource[Resolve Source: Stable Tag vs. Main Branch]
         CompileApp[Compile APK via build.sh / cargo-ndk]
         VerifyAPK[Verify Integrity: Size &gt; 1MB + unzip -tq]
@@ -87,11 +87,11 @@ permissions:
 
 Rust Android cross-compilation builds hundreds of native crates and dependencies per app. The pipeline uses a three-tier caching hierarchy to reduce build times from ~30 minutes down to ~5–8 minutes on warm runners:
 
-### Tier 1: `sccache` (Shared Compiler Cache)
-* **Action:** `mozilla-actions/sccache-action@v0.0.8`
-* **Backend:** Native GitHub Actions Cache API (`SCCACHE_GHA_ENABLED: "true"`).
+### Tier 1: `sccache` (Local Disk Compiler Cache + `actions/cache`)
+* **Action:** `mozilla-actions/sccache-action@v0.0.11` + `actions/cache@v4`
+* **Path:** `~/.cache/sccache`
 * **Compiler Wrapper:** `RUSTC_WRAPPER: "sccache"`
-* **What it caches:** Compiled C/C++ and Rust crate artifacts (`.o`, `.rlib`, `.rmeta`). If multiple apps share identical dependencies (e.g., `egui`, `vello`, `winit`, `cpal`, `symphonia`), `sccache` shares compilation hits across matrix jobs.
+* **What it caches:** Compiled C/C++ and Rust crate artifacts (`.o`, `.rlib`, `.rmeta`). By writing to local SSD during compilation and bundling into a single archive via `actions/cache`, it completely eliminates GitHub Actions Cache API rate-limiting (HTTP 429 write errors) across the 14 parallel matrix jobs.
 
 ### Tier 2: Cargo Registry & Git DB
 * **Action:** `actions/cache@v4`
