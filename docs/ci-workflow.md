@@ -28,15 +28,15 @@ flowchart TD
         DownloadAll[Download all *-apk artifacts]
         PruneBad[Validate &amp; Prune invalid APKs]
         UploadAllBundle[Upload artcraft-all-apks artifact]
-        TagCheck{Tag push e.g. v*?}
+        ManualCheck{Manual dispatch release requested?}
         CreateRelease[Create GitHub Release with softprops/action-gh-release]
     end
 
     BundleJob --> DownloadAll
     PruneBad --> UploadAllBundle
-    UploadAllBundle --> TagCheck
-    TagCheck -- Yes --> CreateRelease
-    TagCheck -- No --> Done([Complete])
+    UploadAllBundle --> ManualCheck
+    ManualCheck -- Yes --> CreateRelease
+    ManualCheck -- No --> Done([Complete])
     CreateRelease --> Done
 ```
 
@@ -48,11 +48,14 @@ flowchart TD
 1. **Push to Branches (`branches: ['**']`):**
    Runs automatically on all branch commits to ensure PRs and branch updates don't break Android compatibility.
 2. **Push to Tags (`tags: ['**']`):**
-   When pushing semantic release tags (e.g. `v1`, `v0.2.0`), triggers the full matrix build and publishes an official GitHub Release.
+   When pushing semantic release tags (e.g. `v1`, `v0.2.0`), triggers the full matrix build and generates the bundled APK artifacts. Automatic release creation on tag pushes is disabled so releases can be handled manually.
 3. **Manual Dispatch (`workflow_dispatch`):**
    Allows manual runs from the GitHub Actions UI with custom parameters:
    - `mode`: `release` (default, optimized) or `debug` (faster build, larger binary).
    - `source_version`: `stable` (default, latest release tags) or `main` (bleeding-edge rolling upstream commits).
+   - `create_release`: `false` (default) or `true` (manually publishes a GitHub Release with built APKs).
+   - `release_tag`: Optional release tag name (defaults to ref name).
+   - `draft_release`: `false` (default) or `true` (creates release as draft).
 
 ### Concurrency Control
 ```yaml
@@ -190,8 +193,10 @@ bundle:
 2. **Download Artifacts:** Pulls all `*-apk` artifacts into `all-apks/`.
 3. **Second-Pass Validation:** Inspects all downloaded APKs, removes any corrupted or incomplete files, and sets `has_apks=true` if valid APKs exist.
 4. **Combined Artifact:** Uploads `artcraft-all-apks` containing all successfully built APKs in one zip.
-5. **Release Creation:**
-   If the pipeline was triggered by a tag starting with `v` (e.g. `git push origin v1`), `softprops/action-gh-release@v2` publishes a GitHub Release containing all individual APKs and generated release notes.
+5. **Release Creation (Manual):**
+   Automatic release publishing on tag push is disabled. Releases are managed manually:
+   - Either by downloading the built APK artifacts (`artcraft-all-apks` or individual `*-apk`) and creating a release manually in GitHub Releases, or
+   - By running manual `workflow_dispatch` with `create_release: true` (and optional `release_tag` / `draft_release`).
 
 ---
 

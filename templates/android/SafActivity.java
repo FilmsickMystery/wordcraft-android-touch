@@ -44,6 +44,7 @@ import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
 import android.view.inputmethod.InputConnectionWrapper;
 import android.view.inputmethod.InputMethodManager;
+import android.webkit.MimeTypeMap;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 
@@ -84,6 +85,7 @@ public final class __CLASS__ extends GameActivity {
     private final ConcurrentLinkedQueue<String> results = new ConcurrentLinkedQueue<>();
     private final Map<Integer, Long> requestIds = new HashMap<>();
     private final Map<Long, String> suggestedNames = new HashMap<>();
+    private final Map<Long, List<String>> requestExtensions = new HashMap<>();
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private AudioManager audioManager;
     private int originalAudioMode = AudioManager.MODE_NORMAL;
@@ -858,16 +860,33 @@ public final class __CLASS__ extends GameActivity {
 
     public String safPoll() { return results.poll(); }
     public void safRequestOpen(long id, boolean multiple) {
+        safRequestOpen(id, multiple, null);
+    }
+
+    public void safRequestOpen(long id, boolean multiple, String extensionsStr) {
         runOnUiThread(() -> {
             try {
                 Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
                 intent.addCategory(Intent.CATEGORY_OPENABLE);
-                intent.setType("*/*");
+                List<String> exts = parseExtensions(extensionsStr);
+                if (!exts.isEmpty()) {
+                    requestExtensions.put(id, exts);
+                    List<String> mimes = resolveMimeTypes(exts);
+                    if (!mimes.isEmpty()) {
+                        intent.setType("*/*");
+                        intent.putExtra(Intent.EXTRA_MIME_TYPES, mimes.toArray(new String[0]));
+                    } else {
+                        intent.setType("*/*");
+                    }
+                } else {
+                    intent.setType("*/*");
+                }
                 intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, multiple);
                 intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
                 requestIds.put(REQ_OPEN, id);
                 startActivityForResult(intent, REQ_OPEN);
             } catch (Exception e) {
+                requestExtensions.remove(id);
                 enqueueError(id, "open", e.toString());
             }
         });
@@ -933,6 +952,7 @@ public final class __CLASS__ extends GameActivity {
         final String kind = requestCode == REQ_OPEN ? "open" : requestCode == REQ_SAVE ? "save" : "folder";
         if (resultCode != RESULT_OK || data == null) {
             suggestedNames.remove(id);
+            requestExtensions.remove(id);
             enqueueCancel(id, kind);
             return;
         }
@@ -989,7 +1009,18 @@ public final class __CLASS__ extends GameActivity {
         } else if (data.getData() != null) {
             uris.add(data.getData());
         }
-        if (uris.isEmpty()) { enqueueCancel(id, kind); return; }
+        if (uris.isEmpty()) { requestExtensions.remove(id); enqueueCancel(id, kind); return; }
+        final List<String> allowedExts = requestExtensions.remove(id);
+        if (allowedExts != null && !allowedExts.isEmpty()) {
+            for (Uri uri : uris) {
+                String name = displayName(uri);
+                String ext = getFileExtension(name);
+                if (!allowedExts.contains(ext)) {
+                    enqueueError(id, "open", "Selected file '" + name + "' is not a supported format (" + String.join(", ", allowedExts) + ")");
+                    return;
+                }
+            }
+        }
         for (Uri uri : uris) persistPermission(uri, data);
         io.execute(() -> {
             try {
@@ -1456,5 +1487,70 @@ public final class __CLASS__ extends GameActivity {
         if (lower.endsWith(".epub")) return "application/epub+zip";
         if (lower.endsWith(".zip")) return "application/zip";
         return "application/octet-stream";
+    }
+
+    private static List<String> parseExtensions(String extensionsStr) {
+        List<String> list = new ArrayList<>();
+        if (extensionsStr == null || extensionsStr.trim().isEmpty()) return list;
+        for (String part : extensionsStr.split("[,;\\s]+")) {
+            String clean = part.trim().toLowerCase(java.util.Locale.US);
+            if (clean.startsWith(".")) clean = clean.substring(1);
+            if (!clean.isEmpty() && !list.contains(clean)) list.add(clean);
+        }
+        return list;
+    }
+
+    private static List<String> resolveMimeTypes(List<String> extensions) {
+        LinkedHashSet<String> mimes = new LinkedHashSet<>();
+        MimeTypeMap map = MimeTypeMap.getSingleton();
+        for (String ext : extensions) {
+            String mime = map.getMimeTypeFromExtension(ext);
+            if (mime != null) mimes.add(mime);
+            switch (ext) {
+                case "wasm":
+                    mimes.add("application/wasm");
+                    mimes.add("application/octet-stream");
+                    break;
+                case "psd":
+                case "psb":
+                    mimes.add("image/vnd.adobe.photoshop");
+                    mimes.add("application/x-photoshop");
+                    mimes.add("application/octet-stream");
+                    break;
+                case "pcraft":
+                    mimes.add("application/octet-stream");
+                    mimes.add("application/zip");
+                    break;
+                case "tif":
+                case "tiff":
+                    mimes.add("image/tiff");
+                    break;
+                case "png":
+                    mimes.add("image/png");
+                    break;
+                case "jpg":
+                case "jpeg":
+                    mimes.add("image/jpeg");
+                    break;
+                case "webp":
+                    mimes.add("image/webp");
+                    break;
+                case "svg":
+                    mimes.add("image/svg+xml");
+                    break;
+                case "pdf":
+                    mimes.add("application/pdf");
+                    break;
+                default:
+                    break;
+            }
+        }
+        return new ArrayList<>(mimes);
+    }
+
+    private static String getFileExtension(String path) {
+        if (path == null) return "";
+        int dot = path.lastIndexOf('.');
+        return dot >= 0 ? path.substring(dot + 1).toLowerCase(java.util.Locale.US) : "";
     }
 }

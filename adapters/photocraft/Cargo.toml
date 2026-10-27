@@ -20,6 +20,7 @@ egui-winit = "0.36"
 log = { workspace = true }
 serde_json = { workspace = true }
 jni = "0.22"
+rayon = { workspace = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
 android-activity = { version = "0.6", default-features = false, features = ["game-activity"] }
