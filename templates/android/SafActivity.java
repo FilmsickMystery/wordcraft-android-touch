@@ -633,6 +633,27 @@ public final class __CLASS__ extends GameActivity {
                         }
 
                         @Override
+                        public boolean deleteSurroundingTextInCodePoints(
+                                int beforeLength, int afterLength) {
+                            if (beforeLength > 0 || afterLength > 0) {
+                                if (claimDelete("d")) {
+                                    queueImeEvent("d" + beforeLength + "," + afterLength);
+                                }
+                            }
+                            return super.deleteSurroundingTextInCodePoints(
+                                    beforeLength, afterLength);
+                        }
+
+                        @Override
+                        public boolean setSelection(int start, int end) {
+                            int previousEnd = imeView != null ? imeView.getSelectionEnd() : -1;
+                            if (previousEnd >= 0 && end >= 0 && previousEnd != end) {
+                                queueImeEvent("s" + (end - previousEnd));
+                            }
+                            return super.setSelection(start, end);
+                        }
+
+                        @Override
                         public boolean performEditorAction(int actionCode) {
                             queueImeEvent("a" + actionCode);
                             return super.performEditorAction(actionCode);
@@ -842,11 +863,34 @@ public final class __CLASS__ extends GameActivity {
 
     /**
      * Hand the Rust shell at most one queued keyboard event per call. The first character tags the
-     * event ("c" commit, "p" pre-edit, "f" finish, "d" delete-with-counts, "a" editor action) and
-     * the remainder is the payload; returns {@code null} when the queue is empty.
+     * event ("c" commit, "p" pre-edit, "f" finish, "d" delete-with-counts, "s" cursor movement,
+     * "a" editor action) and the remainder is the payload; returns {@code null} when the queue is empty.
      */
     public String imePoll() {
         return imeEvents.poll();
+    }
+
+    /** Bottom inset in egui points; zero while the system keyboard is hidden. */
+    public float imeBottomInset() {
+        Window window = getWindow();
+        View decor = window != null ? window.getDecorView() : null;
+        if (decor == null) {
+            return 0.0f;
+        }
+
+        float density = getResources().getDisplayMetrics().density;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            WindowInsets insets = decor.getRootWindowInsets();
+            if (insets == null || !insets.isVisible(WindowInsets.Type.ime())) {
+                return 0.0f;
+            }
+            return insets.getInsets(WindowInsets.Type.ime()).bottom / density;
+        }
+
+        Rect visibleFrame = new Rect();
+        decor.getWindowVisibleDisplayFrame(visibleFrame);
+        int bottomInset = Math.max(0, decor.getRootView().getHeight() - visibleFrame.bottom);
+        return bottomInset / density;
     }
 
     /**

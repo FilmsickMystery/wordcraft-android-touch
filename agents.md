@@ -116,7 +116,7 @@ The system uses a hybrid approach:
 BUILDER_VERSION="0.2.0"
 UPDATE_API_URL="https://api.github.com/repos/MostafaXS1/artcraft-android/releases/latest"
 UPDATE_PAGE_URL="https://github.com/MostafaXS1/artcraft-android/releases/latest"
-GENERATOR_VERSION="55"  # Bumped when generated launcher template changes
+GENERATOR_VERSION="62"  # Bumped when generated launcher template changes
 ```
 
 **Repository mappings:**
@@ -260,7 +260,7 @@ All other apps use the inline Python generator in `lib/build-common.sh` (startin
 
 ### 10.1 Generator Constants and Flow
 ```python
-GENERATOR_VERSION = "55"
+GENERATOR_VERSION = "62"
 # Marker file: .artcraft-android-builder-generated contains version
 ```
 
@@ -1303,7 +1303,7 @@ SubCraft uses external app-private storage via `install_persist_env()`:
 
 ---
 
-**Document Version:** 55  
+**Document Version:** 62
 **Last Updated:** October 25, 2026  
 **Maintained by:** ArtCraft Android Builder Team
 
@@ -1864,7 +1864,7 @@ bash build.sh -app
 ## 51. Version History & Changelog Notes
 
 ### 51.1 Generator Version
-`GENERATOR_VERSION = "55"` in lib/build-common.sh
+`GENERATOR_VERSION = "62"` in lib/build-common.sh
 Bump when launcher template changes significantly.
 
 ### 51.2 Builder Version
@@ -1948,4 +1948,3 @@ adb uninstall com.artcraft.<app>
 - [Releases](https://github.com/MostafaXS1/artcraft-android/releases)
 - [ArtCraft Website](https://getartcraft.com/)
 - [Storytold GitHub](https://github.com/storytold)
-

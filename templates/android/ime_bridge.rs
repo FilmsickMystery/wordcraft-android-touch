@@ -27,6 +27,8 @@ pub mod ime {
         /// Set once the Activity reports it has no `imePoll` (an Activity that never adopted the IME
         /// host view), so the per-frame poll stops paying for a call that can only fail.
         unsupported: bool,
+        /// Set once the Activity reports it has no IME inset method.
+        inset_unsupported: bool,
     }
 
     impl ImeBridge {
@@ -37,6 +39,7 @@ pub mod ime {
                 app: app.clone(),
                 vm: Arc::new(vm),
                 unsupported: false,
+                inset_unsupported: false,
             }
         }
 
@@ -49,7 +52,23 @@ pub mod ime {
             loop {
                 match self.next_event() {
                     Ok(Some(event)) => {
-                        if let Some(event) = translate(&event) {
+                        // Gboard's cursor-swipe gesture reports a relative setSelection change.
+                        // The invisible EditText mirrors IME edits, so replay that movement as
+                        // arrow-key events in WordCraft's actual document editor.
+                        if let Some(delta) = event.strip_prefix('s').and_then(|value| value.parse::<i32>().ok()) {
+                            let steps = delta.unsigned_abs().min(4096);
+                            if delta.unsigned_abs() > steps {
+                                log::warn!("Android soft-keyboard cursor move was capped at {steps} steps");
+                            }
+                            let key = if delta < 0 { egui::Key::ArrowLeft } else { egui::Key::ArrowRight };
+                            raw.events.extend((0..steps).map(|step| egui::Event::Key {
+                                key,
+                                physical_key: None,
+                                pressed: true,
+                                repeat: step > 0,
+                                modifiers: egui::Modifiers::default(),
+                            }));
+                        } else if let Some(event) = translate(&event) {
                             raw.events.push(event);
                         }
                     }
@@ -63,8 +82,43 @@ pub mod ime {
             }
         }
 
-        /// Hide the soft keyboard by calling the Activity's `imeHide`. Used when focus is
-        /// surrendered during scroll/draw so the keyboard doesn't persist.
+        /// Return the visible Android IME bottom inset in egui points.
+        pub fn keyboard_inset_bottom(&mut self) -> Option<f32> {
+            if self.inset_unsupported {
+                return None;
+            }
+            let result = self.vm.attach_current_thread(|env| -> jni::errors::Result<f32> {
+                let activity_raw = self.app.activity_as_ptr() as jni::sys::jobject;
+                let activity = unsafe { env.as_cast_raw::<JObject>(&activity_raw)? };
+                let inset = env.call_method(
+                    &*activity,
+                    jni_str!("imeBottomInset"),
+                    jni_sig!("()F"),
+                    &[],
+                );
+                match inset {
+                    Ok(value) => value.f(),
+                    Err(error) => {
+                        env.exception_clear();
+                        Err(error)
+                    }
+                }
+            });
+            match result {
+                Ok(inset) if inset.is_finite() => Some(inset.max(0.0)),
+                Ok(_) => {
+                    log::warn!("Android soft-keyboard bridge returned a non-finite inset");
+                    Some(0.0)
+                }
+                Err(error) => {
+                    log::warn!("Android soft-keyboard inset unavailable: {error}");
+                    self.inset_unsupported = true;
+                    None
+                }
+            }
+        }
+
+        /// Explicitly hide the soft keyboard by calling the Activity's `imeHide`.
         pub fn hide_ime(&self) -> Result<(), String> {
             self.vm
                 .attach_current_thread(|env| -> jni::errors::Result<()> {

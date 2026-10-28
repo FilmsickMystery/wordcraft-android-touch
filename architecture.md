@@ -137,7 +137,7 @@ Simple wrappers that call `lib/build-common.sh` with `MODE` ("release"/"debug") 
 Main orchestrator (~4110 lines). Key responsibilities:
 - Argument parsing: `-<app>`, `-stable|-main|-latest`, `-tag=`, `-branch=`, `-appname=`, `-packagename=`, `-appicon=`, `-h`
 - Resolve app metadata: `TITLE`, `REPO` (defaults to `https://github.com/storytold/<app>.git`), special case SubCraft from `https://github.com/Aalzard/subcraft` (origin check uses `APP_ORIGIN`)
-- Constants: `BUILDER_VERSION="0.2.0"`, `UPDATE_API_URL`, `UPDATE_PAGE_URL`, `GENERATOR_VERSION="55"`
+- Constants: `BUILDER_VERSION="0.2.0"`, `UPDATE_API_URL`, `UPDATE_PAGE_URL`, `GENERATOR_VERSION="62"`
 - Locking: single build lock via `flock` on `.artcraft-build.lock` (records PID)
 - Tool checks: git, cargo, python3 with tomllib
 - SDK/JDK/NDK discovery and bootstrap
@@ -199,7 +199,7 @@ Guarded fixes applied only if broken text present and not already fixed:
 - **CADCraft**: downgrades dependencies due to egui 0.37 breakage (egui/eframe/egui-wgpu to 0.36, harfrust to 0.13.3, quick-xml to 0.41, rstar to 0.12)
 
 ### App-side patches (shell scripts)
-- **`lib/scrolling.sh`**: Patches app source for two-finger scrolling/momentum. Works with vendored winit/egui-winit that recognize gestures. Patches to prevent selection on first finger, add momentum (Android sends no momentum). Applied to all apps.
+- **`lib/scrolling.sh`**: Patches app source for two-finger scrolling/momentum and WordCraft single-finger panning from blank space around pages. The WordCraft patch also prevents canvas pans from taking text focus or dismissing the keyboard. Works with vendored winit/egui-winit that recognize gestures. Applied to all apps.
 - **`lib/subcraft.sh`**: Adds `files::deliver_android(purpose, paths)` to SubCraft so incoming files (intents/drops) go into same queue as picked files. Only for SubCraft.
 - **`lib/ime.sh`**: Patches for soft keyboard return after back-dismiss. Applied only to WordCraft (per comment). Installs IME handling in Activity/shared bridge.
 
@@ -215,7 +215,7 @@ All patches are guarded/idempotent.
 
 ### Generator behavior (summary)
 - Creates Android crate dir `apps/$APP-android/`
-- Uses `GENERATOR_VERSION="55"`. Marker file `.artcraft-android-builder-generated` contains version; if present and matches, may skip full regen in some cases, but generator runs each build and writes files.
+- Uses `GENERATOR_VERSION="62"`. Marker file `.artcraft-android-builder-generated` contains version; if present and matches, may skip full regen in some cases, but generator runs each build and writes files.
 - Inspects upstream workspace: reads `Cargo.toml` to find crates, detects UI crate type (eframe/App, Services/Hooks patterns), determines app type/constructors
 - Copies shared modules: `templates/android/system_fonts.rs`, `templates/android/ime_bridge.rs`, and conditionally `templates/android/saf_bridge.rs` (if SAF needed)
 - Generates `src/lib.rs` with `android_main` wiring eframe/GameActivity, immersive fullscreen, modifier key handling, clipboard shortcuts (Ctrl/Cmd+C/X/V), IME bridge, system fonts, bar appearance, back button mapping to Escape, close-guard integration, input probe, persistence/UI scale/staged pruning logic as applicable
@@ -344,6 +344,9 @@ Complex recipes define how each app integrates SAF:
 - `imeShow()`/`imeHide()` control visibility
 - `imePoll()` returns queued events to Rust
 - Rust `ime_bridge` converts to egui IME events for focused text fields
+- `setSelection` and delete-surrounding callbacks are forwarded to the Rust bridge for cursor movement and Gboard swipe deletion
+- WordCraft reads the Android keyboard bottom inset; its floating selection toolbar docks immediately above the keyboard
+- Canvas panning does not hide the keyboard or surrender the text focus
 - Events wake loop via `onKeyDown` KEYCODE_UNKNOWN (ALooper_wake) so backspace doesn't wait for repaint
 - Duplicate backspace pair guard 30ms
 - Keyboard overlays surface (doesn't resize)
@@ -405,6 +408,7 @@ For apps with `recent_paths`/`open_paths` in recipes:
 ## Clipboard
 
 - Patched egui-winit provides system clipboard via JNI (`ClipboardManager`) on Android
+- Clipboard reads coerce Android `ClipData.Item` to text, including items not exposed as plain `getText()`
 - Shell also handles Ctrl/Cmd+C/X/V shortcuts, synthesizing egui Copy/Cut/Paste events
 
 ---
@@ -438,6 +442,8 @@ For apps with `recent_paths`/`open_paths` in recipes:
 
 - Patched winit provides proper mouse support (hover, buttons, wheel, trackpad) vs touch-only
 - Two-finger scroll/pinch-zoom via patched backend; app-side patches prevent selection, add momentum
+- In WordCraft, a single-finger drag that starts outside every page scrolls the canvas; drags on pages retain text-selection behavior
+- WordCraft's selected-text mini-toolbar stays above the keyboard and remains an interactive egui layer
 - Trackpad smooth scrolling with coasting, mouse wheel in notches
 - Drag-drop supported
 

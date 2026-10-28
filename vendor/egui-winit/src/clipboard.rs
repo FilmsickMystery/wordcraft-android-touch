@@ -214,9 +214,9 @@ fn android_clipboard_get_text() -> Option<String> {
         let text = env
             .call_method(
                 &item,
-                jni_str!("getText"),
-                jni_sig!("()Ljava/lang/CharSequence;"),
-                &[],
+                jni_str!("coerceToText"),
+                jni_sig!("(Landroid/content/Context;)Ljava/lang/CharSequence;"),
+                &[JValue::Object(&*context)],
             )?
             .l()?;
         if text.is_null() {

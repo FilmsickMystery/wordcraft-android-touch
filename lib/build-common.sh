@@ -611,7 +611,7 @@ marker = android_dir / ".artcraft-android-builder-generated"
 # Bump this whenever the generated launcher template changes so stale wrappers (which live in the
 # source checkout and would otherwise be preserved forever) are regenerated automatically instead
 # of failing against a newer app API.
-GENERATOR_VERSION = "61"
+GENERATOR_VERSION = "62"
 
 # A complete adapter supplied by the user wins over auto-detection. This folder is maintained
 # inside the builder, while its contents are copied into this source checkout.
@@ -2821,24 +2821,13 @@ icon = "@mipmap/ic_launcher"
         saf_block = (root / "templates" / "android" / "saf_bridge.rs").read_text()
         saf_block = saf_block + "\n" + saf["state"] + saf["services"] + saf["poll"]
 
-    # The soft keyboard is put away as soon as the app is scrolling or drawing rather than
-    # editing. The app's canvas decides that and sets `request_ime_hide` (see lib/scrolling.sh,
-    # which patches WordCraft's canvas); the shell reads it here, after the frame ran, and tells
-    # the Activity to hide the keyboard. Only WordCraft carries the flag, so only it gets the
-    # block; the other apps keep the keyboard where the platform puts it.
-    ime_hide_logic = ""
+    # WordCraft's floating formatting bar uses the visible area above Android's keyboard.
+    # The IME overlays rather than resizes the native surface, so publish its inset to egui.
+    ime_inset_hook = ""
     if app == "wordcraft":
-        ime_hide_logic = (
-            "        // The canvas worked out that the user is scrolling or drawing, not editing:\n"
-            "        // put the soft keyboard away at once. It is read here, after the frame ran,\n"
-            "        // because the input hook and the frame itself run before the IME output is\n"
-            "        // handed to the platform.\n"
-            "        if self.inner.request_ime_hide {\n"
-            "            self.inner.request_ime_hide = false;\n"
-            "            if let Err(error) = self.ime.hide_ime() {\n"
-            "                log::warn!(\"Could not hide the soft keyboard: {error}\");\n"
-            "            }\n"
-            "        }\n"
+        ime_inset_hook = (
+            "        let ime_bottom = self.ime.keyboard_inset_bottom().unwrap_or(0.0);\n"
+            "        ctx.data_mut(|data| data.insert_temp(egui::Id::new(\"android_ime_bottom_inset\"), ime_bottom));\n"
         )
 
     if has_eframe_app:
@@ -3134,9 +3123,9 @@ fn android_clipboard_get(app: &AndroidApp) -> String {
         let text = env
             .call_method(
                 &item,
-                jni_str!("getText"),
-                jni_sig!("()Ljava/lang/CharSequence;"),
-                &[],
+                jni_str!("coerceToText"),
+                jni_sig!("(Landroid/content/Context;)Ljava/lang/CharSequence;"),
+                &[JValue::Object(&*activity)],
             )?
             .l()?;
         if text.is_null() {
@@ -3537,7 +3526,7 @@ impl Drop for AndroidShell {{
 impl eframe::App for AndroidShell {{
     fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {{
 {intent_logic}{saf_logic_poll}{persist_logic}{staged_logic}        {inner_logic}
-{ime_hide_logic}        self.sync_bar_appearance(ctx);
+        self.sync_bar_appearance(ctx);
 {quit_check}    }}
 
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {{
@@ -3563,7 +3552,7 @@ impl eframe::App for AndroidShell {{
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {{
         self.probe.observe(raw);
         self.ime.poll(raw);
-        self.refresh_fullscreen(raw);
+{ime_inset_hook}        self.refresh_fullscreen(raw);
         apply_android_modifiers(&mut self.modifiers, raw);
         self.map_android_back(raw);
         self.handle_clipboard_shortcuts(raw);
