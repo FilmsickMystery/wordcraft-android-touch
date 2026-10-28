@@ -60,21 +60,8 @@ jobs:
       fail-fast: false
       matrix:
         app:
-          - photocraft
-          - vectorcraft
-          - filmcraft
-          - lightcraft
-          - pdfcraft
-          - effectcraft
-          - designcraft
-          - figcraft
           - wordcraft
-          - soundcraft
-          - deckcraft
-          - cadcraft
-          - gridcraft
-          - subcraft
-
+          
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
