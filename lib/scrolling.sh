@@ -245,11 +245,12 @@ if app == "wordcraft":
     # A one-finger drag that starts in the blank canvas around a page is a pan, not a caret
     # selection. Keep the gesture state in egui memory and feed its deltas through the canvas
     # wheel path; a drag that starts on a page remains a normal text-selection gesture.
-    blank_pan = (
+    blank_pan_state = (
         "#[derive(Clone, Copy)]\n"
-        "struct AndroidBlankPan { id: egui::TouchId, last: Pos2, ending: bool }\n"
-        "\n"
-        "fn android_blank_touch_scroll(ui: &Ui, full: Rect, pages: &[Rect]) -> egui::Vec2 {\n"
+        "struct AndroidBlankPan { id: egui::TouchId, last: egui::Pos2, ending: bool }\n"
+    )
+    blank_pan_scroll = (
+        "fn android_blank_touch_scroll(ui: &egui::Ui, full: egui::Rect, pages: &[egui::Rect]) -> egui::Vec2 {\n"
         "    if !cfg!(target_os = \"android\") {\n"
         "        return egui::Vec2::ZERO;\n"
         "    }\n"
@@ -290,15 +291,33 @@ if app == "wordcraft":
         "    });\n"
         "    delta\n"
         "}\n"
-        "\n"
+    )
+    blank_pan_active = (
         "fn android_blank_touch_pan_active(ctx: &egui::Context) -> bool {\n"
         "    cfg!(target_os = \"android\") && ctx.data(|data| {\n"
         "        data.get_temp::<AndroidBlankPan>(egui::Id::new(\"wordcraft_android_blank_pan\")).is_some()\n"
         "    })\n"
         "}\n"
-        "\n"
     )
-    if fix("crates/ui-egui/src/canvas.rs", "struct ScrollMotion {\n", blank_pan + "struct ScrollMotion {\n"):
+
+    canvas_path = src / "crates/ui-egui/src/canvas.rs"
+    try:
+        canvas_text = canvas_path.read_text()
+    except OSError:
+        canvas_text = ""
+    blank_pan_helpers = []
+    if (
+        ("fn android_blank_touch_scroll(" not in canvas_text
+         or "fn android_blank_touch_pan_active(" not in canvas_text)
+        and "struct AndroidBlankPan {" not in canvas_text
+    ):
+        blank_pan_helpers.append(blank_pan_state)
+    if "fn android_blank_touch_scroll(" not in canvas_text:
+        blank_pan_helpers.append(blank_pan_scroll)
+    if "fn android_blank_touch_pan_active(" not in canvas_text:
+        blank_pan_helpers.append(blank_pan_active)
+    if blank_pan_helpers and canvas_text:
+        canvas_path.write_text(canvas_text.rstrip() + "\n\n" + "\n".join(blank_pan_helpers) + "\n")
         fixed.append("crates/ui-egui/src/canvas.rs (single-finger blank-area scrolling)")
 
     if fix(
