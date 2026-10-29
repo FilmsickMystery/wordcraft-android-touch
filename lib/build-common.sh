@@ -3864,24 +3864,82 @@ fi
 # (`_ => None // TODO mouse events`), so a connected mouse degenerated into finger taps —
 # no right click, no wheel scrolling, no hover. Vendor the builder's patched winit (mouse
 # buttons, wheel -> MouseWheel, hover -> CursorMoved/Entered/Left, mouse-source moves no
-# longer masquerade as touch) and patch it into the workspace. PDFCraft already ships a
-# forked winit on the same upstream base: only its Android backend directory is
-# overwritten, so its non-Android customizations and its existing patch entry survive.
+# longer masquerade as touch) and patch it into the workspace. Keep an upstream-pinned
+# winit fork as the base when it provides newer APIs, overlaying only the Android backend.
 echo "Vendoring the mouse/scroll-aware winit for $TITLE..."
 mkdir -p "$SRC/vendor"
-if [[ -d "$SRC/vendor/winit" ]]; then
-    rm -rf "$SRC/vendor/winit/src/platform_impl/android"
-    cp -a "$ROOT/vendor/winit/src/platform_impl/android" "$SRC/vendor/winit/src/platform_impl/android"
-else
-    rm -rf "$SRC/vendor/winit"
-    cp -a "$ROOT/vendor/winit" "$SRC/vendor/winit"
-fi
-python3 - "$SRC/Cargo.toml" <<'PY'
+W_INIT_VENDOR_REL="$(python3 - "$SRC" "$ROOT/vendor/winit" <<'PY'
+from pathlib import Path
+import hashlib
+import shutil
+import subprocess
+import sys
+import tempfile
+import tomllib
+
+src, builder_winit = Path(sys.argv[1]), Path(sys.argv[2])
+destination = src / "vendor/winit"
+manifest_text = subprocess.check_output(
+    ["git", "-C", str(src), "show", "HEAD:Cargo.toml"],
+    text=True,
+)
+manifest = tomllib.loads(manifest_text)
+winit_patch = manifest.get("patch", {}).get("crates-io", {}).get("winit", {})
+git_url = winit_patch.get("git") if isinstance(winit_patch, dict) else None
+revision = (
+    (winit_patch.get("rev") or winit_patch.get("tag"))
+    if isinstance(winit_patch, dict)
+    else None
+)
+
+if git_url and not revision:
+    raise SystemExit(
+        "The upstream winit Git patch is not pinned to a revision or tag; "
+        "refusing to replace it with an incompatible registry snapshot."
+    )
+if git_url:
+    def has_ime_reset_api(path: Path) -> bool:
+        event = path / "src/event.rs"
+        window = path / "src/window.rs"
+        return (
+            event.is_file()
+            and window.is_file()
+            and "ImeResetCompleted" in event.read_text()
+            and "reset_ime_with_request" in window.read_text()
+        )
+
+    if destination.exists() and not has_ime_reset_api(destination):
+        suffix = hashlib.sha256(revision.encode()).hexdigest()[:8]
+        destination = src / "vendor" / f"winit-upstream-{suffix}"
+    if destination.exists():
+        if not has_ime_reset_api(destination):
+            raise SystemExit(f"Existing pinned winit checkout at {destination} lacks IME reset APIs.")
+    else:
+        with tempfile.TemporaryDirectory(prefix=".winit-base-", dir=src / "vendor") as temp:
+            checkout = Path(temp) / "checkout"
+            subprocess.run(
+                ["git", "clone", "--quiet", "--filter=blob:none", "--no-checkout", git_url, str(checkout)],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(checkout), "checkout", "--quiet", "--detach", revision],
+                check=True,
+            )
+            shutil.move(str(checkout), str(destination))
+else:
+    if not destination.exists():
+        shutil.copytree(builder_winit, destination)
+print(destination.relative_to(src))
+PY
+)"
+rm -rf "$SRC/$W_INIT_VENDOR_REL/src/platform_impl/android"
+cp -a "$ROOT/vendor/winit/src/platform_impl/android" "$SRC/$W_INIT_VENDOR_REL/src/platform_impl/android"
+python3 - "$SRC/Cargo.toml" "$W_INIT_VENDOR_REL" <<'PY'
 from pathlib import Path
 import sys, tomllib
 p = Path(sys.argv[1])
 s = p.read_text()
-entry = 'winit = { path = "vendor/winit" }'
+entry = f'winit = {{ path = "{sys.argv[2]}" }}'
 # Remove any existing winit patch entry to avoid duplicate keys
 import re
 # Remove lines starting with winit = (possibly with whitespace) within patch.crates-io section
