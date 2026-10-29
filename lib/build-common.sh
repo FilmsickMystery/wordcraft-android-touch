@@ -1322,6 +1322,7 @@ fn saf_services(bridge: saf::Bridge, state: Arc<SafState>, inbox: SafInbox) -> S
             let (tx, rx) = std::sync::mpsc::channel();
             let _ = tx.send(vec![gridcraft_ui_egui::printing::Printer {
                 name: "Android print system".to_owned(),
+                label: "Android print system".to_owned(),
                 default: true,
             }]);
             rx
@@ -1559,6 +1560,7 @@ fn saf_services(bridge: saf::Bridge, state: Arc<SafState>, inbox: SafInbox) -> S
             let (tx, rx) = std::sync::mpsc::channel();
             let _ = tx.send(vec![wordcraft_ui_egui::printing::Printer {
                 name: "Android print system".to_owned(),
+                label: "Android print system".to_owned(),
                 default: true,
             }]);
             rx
@@ -2602,7 +2604,12 @@ else:
 # A type that does not implement `eframe::App` is an inner app state; its desktop `main.rs` wraps it
 # in a tiny struct that forwards `logic`/`ui`. Emit the same wrapper here.
 has_eframe_app = bool(re.search(r"impl\s+eframe::App\s+for\s+" + re.escape(app_type) + r"\b", ui_text))
-has_raw_hook = bool(re.search(r"pub fn raw_input_hook\b", ui_text))
+raw_hook_match = re.search(r"pub fn raw_input_hook\s*\(([^)]*)\)", ui_text, re.S)
+has_raw_hook = raw_hook_match is not None
+raw_hook_takes_context = bool(
+    raw_hook_match
+    and re.search(r"\bctx\s*:\s*&\s*egui::Context\b", raw_hook_match.group(1))
+)
 # A close guard: the app's own "may I close?" check. The desktop runs it when its window closes,
 # so a document with unsaved changes asks first ("Do you want to quit without saving unsaved
 # changes?"); the Android back button runs the very same check, so the app's own prompt appears
@@ -2838,7 +2845,11 @@ icon = "@mipmap/ic_launcher"
         inner_logic = "let _ = frame;\n        self.inner.logic(ctx);"
         inner_ui = "let _ = frame;\n        self.inner.ui(ui);"
         if has_raw_hook:
-            inner_hook = "let _ = ctx;\n        self.inner.raw_input_hook(raw);"
+            inner_hook = (
+                "self.inner.raw_input_hook(ctx, raw);"
+                if raw_hook_takes_context
+                else "self.inner.raw_input_hook(raw);"
+            )
         else:
             inner_hook = "let _ = (ctx, raw);"
 
