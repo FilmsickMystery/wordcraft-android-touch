@@ -551,7 +551,8 @@ impl State {
             // Things we completely ignore:
             WindowEvent::ActivationTokenDone { .. }
             | WindowEvent::AxisMotion { .. }
-            | WindowEvent::DoubleTapGesture { .. } => EventResponse {
+            | WindowEvent::DoubleTapGesture { .. }
+            | WindowEvent::ImeResetCompleted { .. } => EventResponse {
                 repaint: false,
                 consumed: false,
             },
@@ -2426,6 +2427,7 @@ pub fn short_window_event_description(event: &winit::event::WindowEvent) -> &'st
         WindowEvent::KeyboardInput { .. } => "WindowEvent::KeyboardInput",
         WindowEvent::ModifiersChanged { .. } => "WindowEvent::ModifiersChanged",
         WindowEvent::Ime { .. } => "WindowEvent::Ime",
+        WindowEvent::ImeResetCompleted { .. } => "WindowEvent::ImeResetCompleted",
         WindowEvent::CursorMoved { .. } => "WindowEvent::CursorMoved",
         WindowEvent::CursorEntered { .. } => "WindowEvent::CursorEntered",
         WindowEvent::CursorLeft { .. } => "WindowEvent::CursorLeft",
