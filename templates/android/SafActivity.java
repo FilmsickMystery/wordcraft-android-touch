@@ -9,6 +9,7 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.graphics.Rect;
+import android.graphics.drawable.GradientDrawable;
 import android.graphics.pdf.PdfRenderer;
 import android.media.AudioManager;
 import android.net.Uri;
@@ -40,6 +41,7 @@ import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
+import android.view.inputmethod.BaseInputConnection;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
 import android.view.inputmethod.InputConnectionWrapper;
@@ -47,6 +49,7 @@ import android.view.inputmethod.InputMethodManager;
 import android.webkit.MimeTypeMap;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.TextView;
 
 import com.google.androidgamesdk.GameActivity;
 
@@ -113,8 +116,14 @@ public final class __CLASS__ extends GameActivity {
     // egui IME events.
     private final ConcurrentLinkedQueue<String> imeEvents = new ConcurrentLinkedQueue<>();
     private EditText imeView;
+    private TextView imeToggle;
     // True between imeShow() and imeHide(); suppresses a deferred show that a quick hide overtook.
     private volatile boolean imeWanted = false;
+    private volatile boolean imeBlocked = false;
+    private String pendingRustImeText;
+    private int pendingRustImeCursor;
+    private int pendingRustImeAnchor;
+    private boolean hasPendingRustImeState;
     // Some IMEs report one backspace press twice, through two different calls:
     // `deleteSurroundingText(1,0)` and `sendKeyEvent(KEYCODE_DEL)`. Both arrive back to back, in
     // the same IME dispatch — microseconds apart — while two deliberate taps are always further
@@ -601,6 +610,12 @@ public final class __CLASS__ extends GameActivity {
                     if (base == null) {
                         return null;
                     }
+                    outAttrs.initialSelStart = getSelectionStart();
+                    outAttrs.initialSelEnd = getSelectionEnd();
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        outAttrs.setInitialSurroundingText(getText());
+                    }
+                    reportImeSelection();
                     return new InputConnectionWrapper(base, true) {
                         @Override
                         public boolean commitText(CharSequence text, int newCursorPosition) {
@@ -619,7 +634,9 @@ public final class __CLASS__ extends GameActivity {
                         @Override
                         public boolean finishComposingText() {
                             queueImeEvent("f");
-                            return super.finishComposingText();
+                            boolean finished = super.finishComposingText();
+                            imeView.post(() -> applyPendingRustImeState());
+                            return finished;
                         }
 
                         @Override
@@ -717,6 +734,12 @@ public final class __CLASS__ extends GameActivity {
                     // surface underneath.
                     return false;
                 }
+
+                @Override
+                protected void onSelectionChanged(int selStart, int selEnd) {
+                    super.onSelectionChanged(selStart, selEnd);
+                    reportImeSelection();
+                }
             };
             imeView.setBackground(null);
             imeView.setCursorVisible(false);
@@ -735,9 +758,17 @@ public final class __CLASS__ extends GameActivity {
             // suppressSelectionHandles(); touches already pass through (onTouchEvent above).
             imeView.setOnLongClickListener(view -> true);
             imeView.setLongClickable(false);
+            imeView.setOnFocusChangeListener((view, hasFocus) -> {
+                if (hasFocus) {
+                    reportImeSelection();
+                }
+            });
             FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(1, 1);
             params.gravity = Gravity.TOP | Gravity.START;
             addContentView(imeView, params);
+            if (__KEYBOARD_TOGGLE__) {
+                installKeyboardToggle();
+            }
         } catch (Throwable error) {
             Log.w(TAG, "Could not install the soft-keyboard host view", error);
         }
@@ -746,18 +777,19 @@ public final class __CLASS__ extends GameActivity {
     /** Show the soft keyboard by focusing the IME host view. Called by the Rust shell via JNI. */
     public void imeShow() {
         final EditText view = imeView;
-        if (view == null) {
+        if (view == null || imeBlocked) {
             return;
         }
         imeWanted = true;
         runOnUiThread(() -> {
-            if (!imeWanted) {
+            if (!imeWanted || imeBlocked) {
                 return;
             }
             try {
                 view.setFocusable(true);
                 view.setFocusableInTouchMode(true);
                 view.requestFocus();
+                reportImeSelection();
                 InputMethodManager imm =
                         (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
                 if (imm != null && imm.showSoftInput(view, InputMethodManager.SHOW_IMPLICIT)) {
@@ -766,7 +798,7 @@ public final class __CLASS__ extends GameActivity {
                 // Some devices ignore the request until focus and layout have settled; retry once on
                 // the next message-loop turn (guarded so a following hide wins).
                 view.post(() -> {
-                    if (!imeWanted) {
+                    if (!imeWanted || imeBlocked) {
                         return;
                     }
                     try {
@@ -800,12 +832,113 @@ public final class __CLASS__ extends GameActivity {
                     imm.hideSoftInputFromWindow(view.getWindowToken(), 0);
                 }
                 view.clearFocus();
-                // Drop the scratch buffer between sessions so it cannot grow without bound.
-                view.setText("");
             } catch (Throwable error) {
                 Log.w(TAG, "Could not hide the soft keyboard", error);
             }
         });
+    }
+
+    private void installKeyboardToggle() {
+        TextView button = new TextView(this);
+        button.setText("\u2328");
+        button.setTextColor(0xFFFFFFFF);
+        button.setTextSize(22);
+        button.setGravity(Gravity.CENTER);
+        button.setFocusable(false);
+        button.setFocusableInTouchMode(false);
+        button.setElevation(dp(6));
+        button.setSoundEffectsEnabled(false);
+        button.setOnApplyWindowInsetsListener((view, insets) -> {
+            int keyboardInset = 0;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+                    && insets.isVisible(WindowInsets.Type.ime())) {
+                keyboardInset = insets.getInsets(WindowInsets.Type.ime()).bottom;
+            }
+            FrameLayout.LayoutParams layout =
+                    (FrameLayout.LayoutParams) view.getLayoutParams();
+            int bottomMargin = dp(24) + keyboardInset;
+            if (layout.bottomMargin != bottomMargin) {
+                layout.bottomMargin = bottomMargin;
+                view.setLayoutParams(layout);
+            }
+            return insets;
+        });
+        button.setOnClickListener(view -> {
+            imeBlocked = !imeBlocked;
+            updateKeyboardToggle();
+            if (imeBlocked) {
+                imeHide();
+            } else {
+                imeShow();
+            }
+        });
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(dp(48), dp(48));
+        params.gravity = Gravity.END | Gravity.BOTTOM;
+        params.setMargins(0, 0, dp(16), dp(24));
+        addContentView(button, params);
+        imeToggle = button;
+        updateKeyboardToggle();
+        button.requestApplyInsets();
+    }
+
+    private int dp(float value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    private void updateKeyboardToggle() {
+        TextView button = imeToggle;
+        if (button == null) {
+            return;
+        }
+        button.setContentDescription(
+                imeBlocked ? "Enable keyboard" : "Disable keyboard and enter view mode");
+        GradientDrawable background = new GradientDrawable();
+        background.setShape(GradientDrawable.OVAL);
+        background.setColor(imeBlocked ? 0xFFE08A00 : 0xDD263238);
+        button.setBackground(background);
+    }
+
+    /** Replace the IME host's bounded text window and selection with the settled WordCraft state. */
+    public void imeUpdateState(String text, int cursor, int anchor) {
+        if (text == null) {
+            return;
+        }
+        runOnUiThread(() -> {
+            pendingRustImeText = text;
+            pendingRustImeCursor = cursor;
+            pendingRustImeAnchor = anchor;
+            hasPendingRustImeState = true;
+            applyPendingRustImeState();
+        });
+    }
+
+    /** Clear a pending snapshot when WordCraft has no text-backed IME context. */
+    public void imeClearRustState() {
+        runOnUiThread(() -> {
+            pendingRustImeText = null;
+            hasPendingRustImeState = false;
+        });
+    }
+
+    private void applyPendingRustImeState() {
+        EditText view = imeView;
+        if (view == null || !hasPendingRustImeState || pendingRustImeText == null) {
+            return;
+        }
+        if (BaseInputConnection.getComposingSpanStart(view.getText()) >= 0) {
+            return;
+        }
+        String text = pendingRustImeText;
+        int cursor = Math.max(0, Math.min(pendingRustImeCursor, text.length()));
+        int anchor = Math.max(0, Math.min(pendingRustImeAnchor, text.length()));
+        if (!view.getText().toString().contentEquals(text)) {
+            view.setText(text);
+        }
+        if (view.getSelectionStart() != anchor || view.getSelectionEnd() != cursor) {
+            view.setSelection(anchor, cursor);
+        }
+        hasPendingRustImeState = false;
+        reportImeSelection();
     }
 
     /**
@@ -870,27 +1003,27 @@ public final class __CLASS__ extends GameActivity {
         return imeEvents.poll();
     }
 
-    /** Bottom inset in egui points; zero while the system keyboard is hidden. */
-    public float imeBottomInset() {
-        Window window = getWindow();
-        View decor = window != null ? window.getDecorView() : null;
-        if (decor == null) {
-            return 0.0f;
+    private void reportImeSelection() {
+        EditText view = imeView;
+        if (view == null) {
+            return;
         }
-
-        float density = getResources().getDisplayMetrics().density;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            WindowInsets insets = decor.getRootWindowInsets();
-            if (insets == null || !insets.isVisible(WindowInsets.Type.ime())) {
-                return 0.0f;
+        view.post(() -> {
+            if (imeView != view || !view.hasFocus()) {
+                return;
             }
-            return insets.getInsets(WindowInsets.Type.ime()).bottom / density;
-        }
-
-        Rect visibleFrame = new Rect();
-        decor.getWindowVisibleDisplayFrame(visibleFrame);
-        int bottomInset = Math.max(0, decor.getRootView().getHeight() - visibleFrame.bottom);
-        return bottomInset / density;
+            InputMethodManager imm =
+                    (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm == null) {
+                return;
+            }
+            imm.updateSelection(
+                    view,
+                    view.getSelectionStart(),
+                    view.getSelectionEnd(),
+                    BaseInputConnection.getComposingSpanStart(view.getText()),
+                    BaseInputConnection.getComposingSpanEnd(view.getText()));
+        });
     }
 
     /**

@@ -611,7 +611,7 @@ marker = android_dir / ".artcraft-android-builder-generated"
 # Bump this whenever the generated launcher template changes so stale wrappers (which live in the
 # source checkout and would otherwise be preserved forever) are regenerated automatically instead
 # of failing against a newer app API.
-GENERATOR_VERSION = "62"
+GENERATOR_VERSION = "64"
 
 # A complete adapter supplied by the user wins over auto-detection. This folder is maintained
 # inside the builder, while its contents are copied into this source checkout.
@@ -2801,6 +2801,7 @@ icon = "@mipmap/ic_launcher"
             java_src.replace("__PACKAGE__", pkg)
             .replace("__CLASS__", saf["activity"])
             .replace("__TAG__", saf["activity"])
+            .replace("__KEYBOARD_TOGGLE__", "true" if app == "wordcraft" else "false")
         )
         java_dir = staging_dir / "java" / Path(*pkg.split("."))
         java_dir.mkdir(parents=True, exist_ok=True)
@@ -2828,15 +2829,6 @@ icon = "@mipmap/ic_launcher"
         saf_block = (root / "templates" / "android" / "saf_bridge.rs").read_text()
         saf_block = saf_block + "\n" + saf["state"] + saf["services"] + saf["poll"]
 
-    # WordCraft's floating formatting bar uses the visible area above Android's keyboard.
-    # The IME overlays rather than resizes the native surface, so publish its inset to egui.
-    ime_inset_hook = ""
-    if app == "wordcraft":
-        ime_inset_hook = (
-            "        let ime_bottom = self.ime.keyboard_inset_bottom().unwrap_or(0.0);\n"
-            "        ctx.data_mut(|data| data.insert_temp(egui::Id::new(\"android_ime_bottom_inset\"), ime_bottom));\n"
-        )
-
     if has_eframe_app:
         inner_logic = "self.inner.logic(ctx, frame);"
         inner_ui = "self.inner.ui(ui, frame);"
@@ -2852,6 +2844,9 @@ icon = "@mipmap/ic_launcher"
             )
         else:
             inner_hook = "let _ = (ctx, raw);"
+    ime_state_ui_hook = (
+        "\n        self.ime.sync_wordcraft_state(ui.ctx());" if app == "wordcraft" else ""
+    )
 
     # The Android back button asks the app before it leaves, so an app with unsaved work opens
     # its own "quit without saving?" prompt instead of the app disappearing. The check is the
@@ -3542,7 +3537,7 @@ impl eframe::App for AndroidShell {{
 
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {{
         system_fonts::install_system_fonts(ui.ctx());
-        {inner_ui}
+        {inner_ui}{ime_state_ui_hook}
         if self.back_pending {{
             self.back_pending = false;
             // A back press was mapped onto Escape. If the app consumed that Escape (a dialog
@@ -3563,7 +3558,7 @@ impl eframe::App for AndroidShell {{
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {{
         self.probe.observe(raw);
         self.ime.poll(raw);
-{ime_inset_hook}        self.refresh_fullscreen(raw);
+        self.refresh_fullscreen(raw);
         apply_android_modifiers(&mut self.modifiers, raw);
         self.map_android_back(raw);
         self.handle_clipboard_shortcuts(raw);

@@ -116,7 +116,7 @@ The system uses a hybrid approach:
 BUILDER_VERSION="0.2.0"
 UPDATE_API_URL="https://api.github.com/repos/MostafaXS1/artcraft-android/releases/latest"
 UPDATE_PAGE_URL="https://github.com/MostafaXS1/artcraft-android/releases/latest"
-GENERATOR_VERSION="62"  # Bumped when generated launcher template changes
+GENERATOR_VERSION="64"  # Bumped when generated launcher template changes
 ```
 
 **Repository mappings:**
@@ -260,7 +260,7 @@ All other apps use the inline Python generator in `lib/build-common.sh` (startin
 
 ### 10.1 Generator Constants and Flow
 ```python
-GENERATOR_VERSION = "62"
+GENERATOR_VERSION = "64"
 # Marker file: .artcraft-android-builder-generated contains version
 ```
 
@@ -761,6 +761,13 @@ imeView.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_
 imeView.setImeOptions(EditorInfo.IME_FLAG_NO_FULLSCREEN);
 ```
 Keyboard overlays surface, doesn't resize it.
+
+WordCraft's generated launcher also publishes its bounded committed-text window and cursor/
+selection offsets to the IME host after each UI pass. The Activity converts those offsets to the
+EditText's UTF-16 indices, exposes them in `EditorInfo`, and reports changes with
+`InputMethodManager.updateSelection()` without restarting the input connection. Its corner keyboard
+toggle hides the keyboard and blocks automatic reopen until enabled again; this toggle is only
+generated for WordCraft.
 
 ## 17. System Fonts
 
@@ -1303,7 +1310,7 @@ SubCraft uses external app-private storage via `install_persist_env()`:
 
 ---
 
-**Document Version:** 62
+**Document Version:** 64
 **Last Updated:** October 25, 2026  
 **Maintained by:** ArtCraft Android Builder Team
 
@@ -1864,7 +1871,7 @@ bash build.sh -app
 ## 51. Version History & Changelog Notes
 
 ### 51.1 Generator Version
-`GENERATOR_VERSION = "62"` in lib/build-common.sh
+`GENERATOR_VERSION = "64"` in lib/build-common.sh
 Bump when launcher template changes significantly.
 
 ### 51.2 Builder Version

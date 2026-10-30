@@ -13,7 +13,7 @@ pub mod ime {
     use android_activity::AndroidApp;
     use jni::{
         JavaVM, jni_sig, jni_str,
-        objects::{JObject, JString},
+        objects::{JObject, JString, JValue},
     };
     use std::sync::Arc;
 
@@ -27,8 +27,8 @@ pub mod ime {
         /// Set once the Activity reports it has no `imePoll` (an Activity that never adopted the IME
         /// host view), so the per-frame poll stops paying for a call that can only fail.
         unsupported: bool,
-        /// Set once the Activity reports it has no IME inset method.
-        inset_unsupported: bool,
+        wordcraft_state_unsupported: bool,
+        last_wordcraft_state: Option<Option<(String, usize, usize)>>,
     }
 
     impl ImeBridge {
@@ -39,7 +39,8 @@ pub mod ime {
                 app: app.clone(),
                 vm: Arc::new(vm),
                 unsupported: false,
-                inset_unsupported: false,
+                wordcraft_state_unsupported: false,
+                last_wordcraft_state: None,
             }
         }
 
@@ -82,40 +83,83 @@ pub mod ime {
             }
         }
 
-        /// Return the visible Android IME bottom inset in egui points.
-        pub fn keyboard_inset_bottom(&mut self) -> Option<f32> {
-            if self.inset_unsupported {
-                return None;
+        /// Keep the Android IME host aligned with WordCraft's committed text window and selection.
+        /// The app publishes this snapshot after each settled UI pass; reading it here applies it
+        /// on the next frame, without restarting the InputConnection.
+        pub fn sync_wordcraft_state(&mut self, ctx: &egui::Context) {
+            if self.wordcraft_state_unsupported {
+                return;
             }
-            let result = self.vm.attach_current_thread(|env| -> jni::errors::Result<f32> {
-                let activity_raw = self.app.activity_as_ptr() as jni::sys::jobject;
-                let activity = unsafe { env.as_cast_raw::<JObject>(&activity_raw)? };
-                let inset = env.call_method(
-                    &*activity,
-                    jni_str!("imeBottomInset"),
-                    jni_sig!("()F"),
-                    &[],
-                );
-                match inset {
-                    Ok(value) => value.f(),
-                    Err(error) => {
-                        env.exception_clear();
-                        Err(error)
-                    }
-                }
-            });
-            match result {
-                Ok(inset) if inset.is_finite() => Some(inset.max(0.0)),
-                Ok(_) => {
-                    log::warn!("Android soft-keyboard bridge returned a non-finite inset");
-                    Some(0.0)
-                }
+            let id = egui::Id::new("artcraft_android_ime_state");
+            let Some(state) =
+                ctx.data(|data| data.get_temp::<Option<(String, usize, usize)>>(id))
+            else {
+                return;
+            };
+            if self.last_wordcraft_state.as_ref() == Some(&state) {
+                return;
+            }
+            match self.send_wordcraft_state(state.as_ref()) {
+                Ok(()) => self.last_wordcraft_state = Some(state),
                 Err(error) => {
-                    log::warn!("Android soft-keyboard inset unavailable: {error}");
-                    self.inset_unsupported = true;
-                    None
+                    log::warn!("Could not synchronize WordCraft's Android IME state: {error}");
+                    self.wordcraft_state_unsupported = true;
                 }
             }
+        }
+
+        fn send_wordcraft_state(
+            &self,
+            state: Option<&(String, usize, usize)>,
+        ) -> Result<(), String> {
+            let state = match state {
+                Some((text, cursor, anchor)) => Some((
+                    text,
+                    Self::utf16_offset(text, *cursor).ok_or_else(|| {
+                        "WordCraft cursor is not a valid UTF-8 byte offset".to_owned()
+                    })?,
+                    Self::utf16_offset(text, *anchor).ok_or_else(|| {
+                        "WordCraft anchor is not a valid UTF-8 byte offset".to_owned()
+                    })?,
+                )),
+                None => None,
+            };
+            self.vm
+                .attach_current_thread(|env| -> jni::errors::Result<()> {
+                    let activity_raw = self.app.activity_as_ptr() as jni::sys::jobject;
+                    let activity = unsafe { env.as_cast_raw::<JObject>(&activity_raw)? };
+                    match state {
+                        Some((text, cursor, anchor)) => {
+                            let text_obj = JObject::from(env.new_string(text)?);
+                            if let Err(error) = env.call_method(
+                                &*activity,
+                                jni_str!("imeUpdateState"),
+                                jni_sig!("(Ljava/lang/String;II)V"),
+                                &[
+                                    JValue::Object(&text_obj),
+                                    JValue::Int(cursor),
+                                    JValue::Int(anchor),
+                                ],
+                            ) {
+                                env.exception_clear();
+                                return Err(error);
+                            }
+                        }
+                        None => {
+                            if let Err(error) = env.call_method(
+                                &*activity,
+                                jni_str!("imeClearRustState"),
+                                jni_sig!("()V"),
+                                &[],
+                            ) {
+                                env.exception_clear();
+                                return Err(error);
+                            }
+                        }
+                    }
+                    Ok(())
+                })
+                .map_err(|error| error.to_string())
         }
 
         /// Explicitly hide the soft keyboard by calling the Activity's `imeHide`.
@@ -138,6 +182,11 @@ pub mod ime {
                     }
                 })
                 .map_err(|error| error.to_string())
+        }
+
+        fn utf16_offset(text: &str, byte_offset: usize) -> Option<i32> {
+            let prefix = text.get(..byte_offset)?;
+            i32::try_from(prefix.encode_utf16().count()).ok()
         }
 
         fn next_event(&self) -> Result<Option<String>, String> {

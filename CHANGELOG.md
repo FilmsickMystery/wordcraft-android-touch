@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- Restored WordCraft's Mini Toolbar to its original position above the selected text and prevented
+  toolbar-layer taps from being handled as canvas clicks or stealing the canvas IME focus.
+- Kept IME output active while a focused text selection changes, avoiding repeated Gboard
+  hide/show cycles; selection updates now use `InputMethodManager.updateSelection` without an
+  input restart or keyboard show request.
+- Preserved WordCraft's committed text and cursor/selection in the Android IME host across keyboard
+  reopen, including UTF-8-to-UTF-16 offsets and fresh `EditorInfo` selection state.
+- Added a WordCraft-only keyboard toggle that hides Gboard and blocks automatic keyboard reopening
+  until the toggle is enabled again.
+- Bumped the launcher generator to version 64 so existing generated launchers receive the IME
+  state synchronization and keyboard toggle.
+
 ## v37 — 2026-10-20
 
 ### Fixed

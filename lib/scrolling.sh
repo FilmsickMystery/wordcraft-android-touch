@@ -170,28 +170,21 @@ if app == "wordcraft":
         canvas_path.write_text(canvas_text)
         fixed.append("crates/ui-egui/src/canvas.rs (removed initial focus surrender)")
 
-    # A two-finger gesture scrolls the document (see the builder's patched winit backend).
-    # The backend takes the gesture over from the touch path and cancels the first finger's
-    # touch when the second finger lands; that cancellation is how the canvas learns a
-    # gesture is in progress, so a press that belongs to the gesture does not start a text
-    # selection, and a selection the first finger already began is dropped.
-    #
-    # egui's own multi-touch state cannot be used for this: the backend keeps egui's touch
-    # state clear (it reports the gesture itself, so egui must not read the same two
-    # fingers as a pinch of its own and zoom the document by accident).
+    # Android reports two-finger pans as point-wheel events and pinches as zoom events after
+    # taking their touches over. Keep treating those frames as gestures, not clicks or focus
+    # changes; the initial cancelled touch covers the hand-off frame.
     guard = (
         "/// A two-finger gesture (scroll or pinch) is in progress: a touch press during it is part\n"
         "/// of that gesture, not a click, and any text-selection drag it began must be dropped.\n"
-        "///\n"
-        "/// The backend takes the gesture over from the touch path and says so by cancelling the\n"
-        "/// first finger's touch (see the builder's patched winit backend), so the gesture is\n"
-        "/// recognised by that cancellation and not by egui's own multi-touch state (which the\n"
-        "/// backend keeps clear, so that egui does not read the same fingers as a pinch).\n"
         "fn touch_gesture_active(ui: &Ui) -> bool {\n"
         "    ui.input(|i| {\n"
         "        i.events\n"
         "            .iter()\n"
         "            .any(|e| matches!(e, egui::Event::Touch { phase: egui::TouchPhase::Cancel, .. }))\n"
+        "            || (cfg!(target_os = \"android\") && i.events.iter().any(|e| matches!(e,\n"
+        "                egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Point, .. }\n"
+        "                    | egui::Event::Zoom(_)\n"
+        "            )))\n"
         "    })\n"
         "}\n"
     )
@@ -215,16 +208,47 @@ if app == "wordcraft":
     ):
         fixed.append("crates/ui-egui/src/canvas.rs (touch gestures start no selection)")
 
-    # Do not begin a selection on a press that is part of a two-finger gesture.
+    # Do not begin a selection on a press that is part of a gesture or blank-area pan.
     if fix(
         "crates/ui-egui/src/canvas.rs",
         "    let pressed = ui.input(|i| i.pointer.primary_pressed()) && resp.contains_pointer() && !over_balloon(app, p);\n",
         "    let pressed = ui.input(|i| i.pointer.primary_pressed())\n"
         "        && !touch_gesture_active(ui)\n"
+        "        && !android_blank_touch_pan_active(ui.ctx())\n"
+        "        && !android_pointer_over_overlay(ui)\n"
         "        && resp.contains_pointer()\n"
         "        && !over_balloon(app, p);\n",
     ):
-        fixed.append("crates/ui-egui/src/canvas.rs (two-finger press does not select)")
+        fixed.append("crates/ui-egui/src/canvas.rs (gestures do not select text)")
+    elif fix(
+        "crates/ui-egui/src/canvas.rs",
+        "    let pressed = ui.input(|i| i.pointer.primary_pressed())\n"
+        "        && !touch_gesture_active(ui)\n"
+        "        && resp.contains_pointer()\n"
+        "        && !over_balloon(app, p);\n",
+        "    let pressed = ui.input(|i| i.pointer.primary_pressed())\n"
+        "        && !touch_gesture_active(ui)\n"
+        "        && !android_blank_touch_pan_active(ui.ctx())\n"
+        "        && !android_pointer_over_overlay(ui)\n"
+        "        && resp.contains_pointer()\n"
+        "        && !over_balloon(app, p);\n",
+    ):
+        fixed.append("crates/ui-egui/src/canvas.rs (blank pans do not select text)")
+    elif upgrade(
+        "crates/ui-egui/src/canvas.rs",
+        "    let pressed = ui.input(|i| i.pointer.primary_pressed())\n"
+        "        && !touch_gesture_active(ui)\n"
+        "        && !android_blank_touch_pan_active(ui.ctx())\n"
+        "        && resp.contains_pointer()\n"
+        "        && !over_balloon(app, p);\n",
+        "    let pressed = ui.input(|i| i.pointer.primary_pressed())\n"
+        "        && !touch_gesture_active(ui)\n"
+        "        && !android_blank_touch_pan_active(ui.ctx())\n"
+        "        && !android_pointer_over_overlay(ui)\n"
+        "        && resp.contains_pointer()\n"
+        "        && !over_balloon(app, p);\n",
+    ):
+        fixed.append("crates/ui-egui/src/canvas.rs (overlay taps do not select document text)")
 
     # A second finger arriving after the press already started a drag: drop it, so the scroll
     # never carries a selection along. Runs before the drag-extension arms below.
@@ -233,18 +257,31 @@ if app == "wordcraft":
         "    } else if app.canvas.dragging\n"
         "        && ui.input(|i| i.pointer.primary_down())\n"
         "        && let Some(d) = app.canvas.unit_drag.as_mut()\n",
-        "    } else if app.canvas.dragging && touch_gesture_active(ui) {\n"
-        "        // A two-finger scroll took over: stop selecting and forget the drag.\n"
+        "    } else if app.canvas.dragging\n"
+        "        && (touch_gesture_active(ui) || android_blank_touch_pan_active(ui.ctx()))\n"
+        "    {\n"
+        "        // A gesture took over: stop selecting and forget the drag.\n"
         "        app.canvas.cancel_text_drag();\n"
         "    } else if app.canvas.dragging\n"
         "        && ui.input(|i| i.pointer.primary_down())\n"
         "        && let Some(d) = app.canvas.unit_drag.as_mut()\n",
     ):
         fixed.append("crates/ui-egui/src/canvas.rs (scroll cancels a live selection drag)")
+    elif upgrade(
+        "crates/ui-egui/src/canvas.rs",
+        "    } else if app.canvas.dragging && touch_gesture_active(ui) {\n"
+        "        // A two-finger scroll took over: stop selecting and forget the drag.\n"
+        "        app.canvas.cancel_text_drag();\n",
+        "    } else if app.canvas.dragging\n"
+        "        && (touch_gesture_active(ui) || android_blank_touch_pan_active(ui.ctx()))\n"
+        "    {\n"
+        "        // A gesture took over: stop selecting and forget the drag.\n"
+        "        app.canvas.cancel_text_drag();\n",
+    ):
+        fixed.append("crates/ui-egui/src/canvas.rs (blank pans cancel text selection)")
 
-    # A one-finger drag that starts in the blank canvas around a page is a pan, not a caret
-    # selection. Keep the gesture state in egui memory and feed its deltas through the canvas
-    # wheel path; a drag that starts on a page remains a normal text-selection gesture.
+    # A one-finger drag that starts in blank canvas space is a pan, not a caret selection.
+    # Only claim it when the point is not handled by a widget or an overlay layer.
     blank_pan_state = (
         "#[derive(Clone, Copy)]\n"
         "struct AndroidBlankPan { id: egui::TouchId, last: egui::Pos2, ending: bool }\n"
@@ -263,12 +300,19 @@ if app == "wordcraft":
         "    let ctx = ui.ctx();\n"
         "    let state_id = egui::Id::new(\"wordcraft_android_blank_pan\");\n"
         "    let mut pan = ctx.data(|data| data.get_temp::<AndroidBlankPan>(state_id));\n"
+        "    let gesture_active = touch_gesture_active(ui);\n"
+        "    if gesture_active { pan = None; }\n"
         "    if touches.is_empty() && pan.is_some_and(|active| active.ending) { pan = None; }\n"
         "    let mut delta = egui::Vec2::ZERO;\n"
+        "    let mut block_new_pan = gesture_active;\n"
         "    for (id, phase, pos) in touches {\n"
         "        match phase {\n"
         "            egui::TouchPhase::Start => {\n"
-        "                pan = (full.contains(pos) && !pages.iter().any(|page| page.contains(pos)))\n"
+        "                if pan.is_some() { pan = None; block_new_pan = true; }\n"
+        "                let over_ui = ctx.wants_pointer_input()\n"
+        "                    || ctx.layer_id_at(pos).is_some_and(|layer| layer != ui.layer_id());\n"
+        "                pan = (!block_new_pan && !over_ui && full.contains(pos)\n"
+        "                    && !pages.iter().any(|page| page.contains(pos)))\n"
         "                    .then_some(AndroidBlankPan { id, last: pos, ending: false });\n"
         "            }\n"
         "            egui::TouchPhase::Move => {\n"
@@ -299,6 +343,13 @@ if app == "wordcraft":
         "    })\n"
         "}\n"
     )
+    overlay_guard = (
+        "fn android_pointer_over_overlay(ui: &egui::Ui) -> bool {\n"
+        "    ui.input(|input| input.pointer.interact_pos())\n"
+        "        .and_then(|pos| ui.ctx().layer_id_at(pos))\n"
+        "        .is_some_and(|layer| layer != ui.layer_id())\n"
+        "}\n"
+    )
 
     canvas_path = src / "crates/ui-egui/src/canvas.rs"
     try:
@@ -316,9 +367,18 @@ if app == "wordcraft":
         blank_pan_helpers.append(blank_pan_scroll)
     if "fn android_blank_touch_pan_active(" not in canvas_text:
         blank_pan_helpers.append(blank_pan_active)
+    if "fn android_pointer_over_overlay(" not in canvas_text:
+        blank_pan_helpers.append(overlay_guard)
     if blank_pan_helpers and canvas_text:
         canvas_path.write_text(canvas_text.rstrip() + "\n\n" + "\n".join(blank_pan_helpers) + "\n")
         fixed.append("crates/ui-egui/src/canvas.rs (single-finger blank-area scrolling)")
+    elif canvas_text and "fn android_blank_touch_scroll(" in canvas_text:
+        if sub(
+            "crates/ui-egui/src/canvas.rs",
+            r"fn android_blank_touch_scroll\(ui: &egui::Ui, full: egui::Rect, pages: &\[egui::Rect\]\) -> egui::Vec2 \{\n.*?\n\}\n",
+            blank_pan_scroll,
+        ):
+            fixed.append("crates/ui-egui/src/canvas.rs (block blank-area pans over UI)")
 
     if fix(
         "crates/ui-egui/src/canvas.rs",
@@ -333,44 +393,26 @@ if app == "wordcraft":
     ):
         fixed.append("crates/ui-egui/src/canvas.rs (blank-area gestures use the wheel scroll path)")
 
-    # When Android reports an IME inset, dock WordCraft's selected-text toolbar above the
-    # keyboard instead of anchoring it over the selected line.
-    if fix(
+    # Undo the prior builder's keyboard-docked toolbar patch in reused source checkouts.
+    toolbar_anchor = "    let Some(bar) = anchor_rect(selection.min.y, selection.min.x, viewport) else { return };\n"
+    if sub(
         "crates/ui-egui/src/mini_toolbar.rs",
-        "    let Some(bar) = anchor_rect(selection.min.y, selection.min.x, viewport) else { return };\n",
-        "    let ime_bottom = if cfg!(target_os = \"android\") {\n"
-        "        ctx.data(|data| data.get_temp::<f32>(egui::Id::new(\"android_ime_bottom_inset\"))).unwrap_or(0.0)\n"
-        "    } else { 0.0 };\n"
-        "    let toolbar_viewport = egui::Rect::from_min_max(\n"
-        "        viewport.min,\n"
-        "        egui::pos2(viewport.max.x, (viewport.max.y - ime_bottom).max(viewport.min.y)),\n"
-        "    );\n"
-        "    let bar = if ime_bottom > 0.0 {\n"
-        "        let x = (selection.center().x - BAR_W * 0.5).clamp(\n"
-        "            toolbar_viewport.left(),\n"
-        "            (toolbar_viewport.right() - BAR_W).max(toolbar_viewport.left()),\n"
-        "        );\n"
-        "        let y = (toolbar_viewport.bottom() - BAR_H).max(toolbar_viewport.top());\n"
-        "        egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(BAR_W, BAR_H))\n"
-        "    } else {\n"
-        "        let Some(bar) = anchor_rect(selection.min.y, selection.min.x, toolbar_viewport) else { return };\n"
-        "        bar\n"
-        "    };\n",
+        r"    let ime_bottom = if cfg!\(target_os = \"android\"\) \{\n.*?    \};\n",
+        toolbar_anchor,
     ):
-        fixed.append("crates/ui-egui/src/mini_toolbar.rs (dock the toolbar above the keyboard)")
-
-    if fix(
-        "crates/ui-egui/src/mini_toolbar.rs",
-        "    let shown = bar.intersect(viewport);\n",
-        "    let shown = bar.intersect(toolbar_viewport);\n",
+        fixed.append("crates/ui-egui/src/mini_toolbar.rs (restore selection-anchored toolbar)")
+    for old, new in (
+        (
+            "    let shown = bar.intersect(toolbar_viewport);\n",
+            "    let shown = bar.intersect(viewport);\n",
+        ),
+        (
+            "    let area = area.constrain_to(toolbar_viewport).constrain(false).fixed_pos(bar.min);\n",
+            "    let area = area.constrain_to(viewport).constrain(false).fixed_pos(bar.min);\n",
+        ),
     ):
-        fixed.append("crates/ui-egui/src/mini_toolbar.rs (clip the toolbar to the visible area)")
-    if fix(
-        "crates/ui-egui/src/mini_toolbar.rs",
-        "    let area = area.constrain_to(viewport).constrain(false).fixed_pos(bar.min);\n",
-        "    let area = area.constrain_to(toolbar_viewport).constrain(false).fixed_pos(bar.min);\n",
-    ):
-        fixed.append("crates/ui-egui/src/mini_toolbar.rs (keep toolbar clicks above the keyboard)")
+        if rewrite("crates/ui-egui/src/mini_toolbar.rs", old, new):
+            fixed.append("crates/ui-egui/src/mini_toolbar.rs (restore viewport clipping)")
 
     # Do not raise the keyboard automatically on the first frame.
     if fix(
@@ -380,26 +422,17 @@ if app == "wordcraft":
     ):
         fixed.append("crates/ui-egui/src/canvas.rs (no keyboard before the first tap)")
 
-    # Keep the Android IME active while the user scrolls.
-    # The IME output for a caret inside a slot (a table cell or a text box) only asks for the
-    # keyboard when there is a real text caret.
+    # Keep emitting IME output while a canvas remains focused, even when its selection is a
+    # range. Omitting it during a drag tells egui-winit to hide the keyboard; restoring it on
+    # the next frame calls showSoftInput again and makes Gboard flicker.
     if sub(
         "crates/ui-egui/src/canvas.rs",
-        r"                if focused \{\n"
-        r"                    ui\.ctx\(\)\.request_repaint_after\(std::time::Duration::from_millis\(530 - \(since as u64 % 530\)\)\);\n"
-        r"                    let cr = Rect::from_min_max\(pos2\(x, y0\), pos2\(x \+ 1\.0, y1\)\);\n"
-        r"                    ui\.ctx\(\)\.output_mut\(\|o\| \{\n"
-        r"                        o\.ime = Some\(egui::output::IMEOutput \{\n"
-        r"                            rect: cr,\n"
-        r"                            cursor_rect: cr,\n"
-        r"                            purpose: Default::default\(\),\n"
-        r"                            should_interrupt_composition: ime_reset,\n"
-        r"                        \}\);\n"
-        r"                    \}\);\n"
+        r"                // A real text caret \(a collapsed selection\), not just canvas focus\.\n"
+        r"                let has_text_caret = app\.session\.sel\.is_collapsed\(\) && focused;\n"
+        r"                if has_text_caret \{\n"
+        r".*?"
         r"                \}\n",
-        "                // A real text caret (a collapsed selection), not just canvas focus.\n"
-        "                let has_text_caret = app.session.sel.is_collapsed() && focused;\n"
-        "                if has_text_caret {\n"
+        "                if focused {\n"
         "                    ui.ctx().request_repaint_after(std::time::Duration::from_millis(530 - (since as u64 % 530)));\n"
         "                    let cr = Rect::from_min_max(pos2(x, y0), pos2(x + 1.0, y1));\n"
         "                    ui.ctx().output_mut(|o| {\n"
@@ -412,37 +445,42 @@ if app == "wordcraft":
         "                    });\n"
         "                }\n",
     ):
-        fixed.append("crates/ui-egui/src/canvas.rs (preserve the text caret for IME)")
+        fixed.append("crates/ui-egui/src/canvas.rs (keep IME active during text selection)")
 
-    # Keep the body caret and IME candidate placement active during scrolling.
+    # Undo the prior builder's selection-collapsed IME candidate guard in reused checkouts.
     if sub(
         "crates/ui-egui/src/canvas.rs",
-        r"            if focused \{\n"
-        r"                ui\.ctx\(\)\.request_repaint_after\(std::time::Duration::from_millis\(530 - \(since as u64 % 530\)\)\);\n"
-        r"            \}\n"
         r"            // IME candidate window placement\.\n"
         r"            let cr = Rect::from_min_max\(pos2\(x, y0\), pos2\(x \+ 1\.0, y1\)\);\n"
-        r"            if focused \{\n",
-        "            if shown {\n"
-        "                ui.ctx().request_repaint_after(std::time::Duration::from_millis(530 - (since as u64 % 530)));\n"
-        "            }\n"
+        r"            if shown \{\n",
         "            // IME candidate window placement.\n"
         "            let cr = Rect::from_min_max(pos2(x, y0), pos2(x + 1.0, y1));\n"
-        "            if shown {\n",
+        "            if focused {\n",
     ):
-        fixed.append("crates/ui-egui/src/canvas.rs (preserve the body caret for IME)")
+        fixed.append("crates/ui-egui/src/canvas.rs (keep IME active for non-collapsed selection)")
 
     # A blank-area pan should not steal the document's text focus or raise the keyboard.
     if fix(
         "crates/ui-egui/src/canvas.rs",
         "    let focus_click = pointer_click || accesskit_click || resp.drag_started();\n",
         "    let blank_touch_pan = crate::canvas::android_blank_touch_pan_active(ui.ctx());\n"
-        "    let focus_click = ((pointer_click || resp.drag_started()) && !blank_touch_pan) || accesskit_click;\n",
+        "    let touch_gesture = crate::canvas::touch_gesture_active(ui);\n"
+        "    let pointer_over_overlay = crate::canvas::android_pointer_over_overlay(ui);\n"
+        "    let focus_click = !touch_gesture\n"
+        "        && !pointer_over_overlay\n"
+        "        && (((pointer_click || resp.drag_started()) && !blank_touch_pan) || accesskit_click);\n",
     ):
         fixed.append("crates/ui-egui/src/canvas.rs (a scroll or a draw takes no focus)")
 
     # Upgrade focus patches already present in reused source checkouts.
     for old, new in (
+        (
+            "    let focus_click = ((pointer_click || resp.drag_started()) && !blank_touch_pan) || accesskit_click;\n",
+            "    let pointer_over_overlay = crate::canvas::android_pointer_over_overlay(ui);\n"
+            "    let focus_click = !crate::canvas::touch_gesture_active(ui)\n"
+            "        && !pointer_over_overlay\n"
+            "        && (((pointer_click || resp.drag_started()) && !blank_touch_pan) || accesskit_click);\n",
+        ),
         (
             "    let middle_gesture = app.canvas.auto_scroll.blocks_input();\n"
             "    let is_drawing =",
@@ -461,7 +499,13 @@ if app == "wordcraft":
         ),
         (
             "    let focus_click = (pointer_click && !is_drawing) || accesskit_click || is_text_drag;\n",
+            "    let focus_click = !touch_gesture_active(ui)\n"
+            "        && ((pointer_click && !is_drawing && !blank_touch_pan) || accesskit_click || is_text_drag);\n",
+        ),
+        (
             "    let focus_click = (pointer_click && !is_drawing && !blank_touch_pan) || accesskit_click || is_text_drag;\n",
+            "    let focus_click = !touch_gesture_active(ui)\n"
+            "        && ((pointer_click && !is_drawing && !blank_touch_pan) || accesskit_click || is_text_drag);\n",
         ),
     ):
         if upgrade("crates/ui-egui/src/canvas.rs", old, new):
@@ -506,6 +550,34 @@ if app == "wordcraft":
         without_android,
     ):
         fixed.append("crates/ui-egui/src/scroll.rs (the app makes the coast Android does not send)")
+
+    # Publish WordCraft's committed text window and UTF-8 cursor offsets for the generated
+    # Android IME host, which converts these offsets to UTF-16 for Gboard.
+    if fix(
+        "crates/ui-egui/src/keys/ime.rs",
+        "    let focused = app.canvas.focused && geometry.is_some();\n"
+        "    let update = if focused {\n",
+        "    let focused = app.canvas.focused && geometry.is_some();\n"
+        "    let window = if focused && app.session.math.is_none() {\n"
+        "        ime_window(app)\n"
+        "    } else {\n"
+        "        None\n"
+        "    };\n"
+        "    ctx.data_mut(|data| {\n"
+        "        data.insert_temp(\n"
+        "            egui::Id::new(\"artcraft_android_ime_state\"),\n"
+        "            window.as_ref().map(|w| (w.text.clone(), w.cursor, w.anchor)),\n"
+        "        );\n"
+        "    });\n"
+        "    let update = if focused {\n",
+    ):
+        fixed.append("crates/ui-egui/src/keys/ime.rs (publish committed IME state to Android)")
+    if fix(
+        "crates/ui-egui/src/keys/ime.rs",
+        "            let window = ime_window(app);\n",
+        "            let window = window.clone();\n",
+    ):
+        fixed.append("crates/ui-egui/src/keys/ime.rs (reuse the published IME text window)")
 
 if fixed:
     print(f"  Added two-finger-scroll patches to {title}: {', '.join(fixed)}")
