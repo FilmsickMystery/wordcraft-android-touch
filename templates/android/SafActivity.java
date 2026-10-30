@@ -618,6 +618,35 @@ public final class __CLASS__ extends GameActivity {
                     reportImeSelection();
                     return new InputConnectionWrapper(base, true) {
                         @Override
+                        public boolean performContextMenuAction(int id) {
+                            if (id == android.R.id.selectAll) {
+                                queueImeEvent("x");
+                                return true;
+                            }
+                            if (id == android.R.id.cut) {
+                                queueImeEvent("y");
+                                return true;
+                            }
+                            if (id == android.R.id.copy) {
+                                queueImeEvent("z");
+                                return true;
+                            }
+                            if (id == android.R.id.paste) {
+                                try {
+                                    String text = readImeClipboardText();
+                                    if (!text.isEmpty()) {
+                                        queueImeEvent("v" + text);
+                                    }
+                                    return true;
+                                } catch (RuntimeException error) {
+                                    Log.e(TAG, "Could not read the clipboard for Gboard paste", error);
+                                    return false;
+                                }
+                            }
+                            return super.performContextMenuAction(id);
+                        }
+
+                        @Override
                         public boolean commitText(CharSequence text, int newCursorPosition) {
                             if (text != null && text.length() > 0) {
                                 queueImeEvent("c" + text);
@@ -678,8 +707,22 @@ public final class __CLASS__ extends GameActivity {
 
                         @Override
                         public boolean sendKeyEvent(KeyEvent event) {
+                            int code = event.getKeyCode();
+                            if (code == KeyEvent.KEYCODE_DPAD_LEFT
+                                    || code == KeyEvent.KEYCODE_DPAD_RIGHT
+                                    || code == KeyEvent.KEYCODE_DPAD_UP
+                                    || code == KeyEvent.KEYCODE_DPAD_DOWN) {
+                                if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                                    String direction = code == KeyEvent.KEYCODE_DPAD_LEFT ? "left"
+                                            : code == KeyEvent.KEYCODE_DPAD_RIGHT ? "right"
+                                            : code == KeyEvent.KEYCODE_DPAD_UP ? "up" : "down";
+                                    queueImeEvent("k" + direction + ","
+                                            + (event.isShiftPressed() ? "1" : "0") + ","
+                                            + (event.getRepeatCount() > 0 ? "1" : "0"));
+                                }
+                                return true;
+                            }
                             if (event.getAction() == KeyEvent.ACTION_DOWN) {
-                                int code = event.getKeyCode();
                                 if (code == KeyEvent.KEYCODE_DEL) {
                                     if (claimDelete("s")) {
                                         queueImeEvent("d1,0");
@@ -774,10 +817,15 @@ public final class __CLASS__ extends GameActivity {
         }
     }
 
-    /** Show the soft keyboard by focusing the IME host view. Called by the Rust shell via JNI. */
+    /** Show the soft keyboard on a new explicit text-focus request from the Rust shell. */
     public void imeShow() {
         final EditText view = imeView;
         if (view == null || imeBlocked) {
+            return;
+        }
+        if (imeWanted) {
+            // Recreated input connections and selection updates only refresh Gboard's cursor state.
+            reportImeSelection();
             return;
         }
         imeWanted = true;
@@ -970,6 +1018,17 @@ public final class __CLASS__ extends GameActivity {
         }
     }
 
+    private String readImeClipboardText() {
+        android.content.ClipboardManager clipboard =
+                (android.content.ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        ClipData clip = clipboard != null ? clipboard.getPrimaryClip() : null;
+        if (clip == null || clip.getItemCount() == 0) {
+            return "";
+        }
+        CharSequence text = clip.getItemAt(0).coerceToText(this);
+        return text != null ? text.toString() : "";
+    }
+
     /**
      * Whether a delete call should be handed to the shell, or dropped as the second half of one
      * press an IME reported twice.
@@ -996,8 +1055,9 @@ public final class __CLASS__ extends GameActivity {
 
     /**
      * Hand the Rust shell at most one queued keyboard event per call. The first character tags the
-     * event ("c" commit, "p" pre-edit, "f" finish, "d" delete-with-counts, "s" cursor movement,
-     * "a" editor action) and the remainder is the payload; returns {@code null} when the queue is empty.
+     * event ("c" commit, "p" pre-edit, "f" finish, "d" delete, "s" cursor movement, "a" editor
+     * action, "x/y/z/v" editing-menu actions, "k" navigation) and the remainder is the payload;
+     * returns {@code null} when the queue is empty.
      */
     public String imePoll() {
         return imeEvents.poll();
@@ -1017,6 +1077,7 @@ public final class __CLASS__ extends GameActivity {
             if (imm == null) {
                 return;
             }
+            // Selection synchronization must not restart input or request that the keyboard show.
             imm.updateSelection(
                     view,
                     view.getSelectionStart(),

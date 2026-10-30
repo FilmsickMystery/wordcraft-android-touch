@@ -53,10 +53,23 @@ pub mod ime {
             loop {
                 match self.next_event() {
                     Ok(Some(event)) => {
+                        if let Some(payload) = event.strip_prefix('k') {
+                            if let Some(key_events) = navigation_events(payload) {
+                                raw.events.extend(key_events);
+                            }
+                            continue;
+                        }
+                        if event == "x" {
+                            raw.events.extend(select_all_events());
+                            continue;
+                        }
                         // Gboard's cursor-swipe gesture reports a relative setSelection change.
                         // The invisible EditText mirrors IME edits, so replay that movement as
                         // arrow-key events in WordCraft's actual document editor.
-                        if let Some(delta) = event.strip_prefix('s').and_then(|value| value.parse::<i32>().ok()) {
+                        if let Some(delta) = event
+                            .strip_prefix('s')
+                            .and_then(|value| value.parse::<i32>().ok())
+                        {
                             let steps = delta.unsigned_abs().min(4096);
                             if delta.unsigned_abs() > steps {
                                 log::warn!("Android soft-keyboard cursor move was capped at {steps} steps");
@@ -236,8 +249,61 @@ pub mod ime {
         }
     }
 
+    fn navigation_events(payload: &str) -> Option<Vec<egui::Event>> {
+        let mut parts = payload.split(',');
+        let key = match parts.next()? {
+            "left" => egui::Key::ArrowLeft,
+            "right" => egui::Key::ArrowRight,
+            "up" => egui::Key::ArrowUp,
+            "down" => egui::Key::ArrowDown,
+            _ => return None,
+        };
+        let shift = parts.next()? == "1";
+        let repeat = parts.next()? == "1";
+        let mut events = Vec::with_capacity(if shift { 3 } else { 1 });
+        if shift {
+            events.push(modifier_key(egui::Key::ShiftLeft, true));
+        }
+        events.push(egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat,
+            modifiers: egui::Modifiers::default(),
+        });
+        if shift {
+            events.push(modifier_key(egui::Key::ShiftLeft, false));
+        }
+        Some(events)
+    }
+
+    fn select_all_events() -> [egui::Event; 3] {
+        [
+            modifier_key(egui::Key::ControlLeft, true),
+            egui::Event::Key {
+                key: egui::Key::A,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::default(),
+            },
+            modifier_key(egui::Key::ControlLeft, false),
+        ]
+    }
+
+    fn modifier_key(key: egui::Key, pressed: bool) -> egui::Event {
+        egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed,
+            repeat: false,
+            modifiers: egui::Modifiers::default(),
+        }
+    }
+
     /// Decode one queued event. The first character tags it and the rest is the payload:
-    /// `c` commit, `p` pre-edit, `f` finish composing, `d` delete `before,after`, `a` editor action.
+    /// `c` commit, `p` pre-edit, `f` finish composing, `d` delete `before,after`, `a` editor action,
+    /// `x/y/z/v` select all/cut/copy/paste.
     fn translate(event: &str) -> Option<egui::Event> {
         let mut chars = event.chars();
         let tag = chars.next()?;
@@ -278,6 +344,9 @@ pub mod ime {
                 }
                 Some(enter_key())
             }
+            'y' => Some(egui::Event::Cut),
+            'z' => Some(egui::Event::Copy),
+            'v' => Some(egui::Event::Paste(payload.to_owned())),
             _ => None,
         }
     }

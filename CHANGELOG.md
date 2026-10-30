@@ -3,6 +3,13 @@
 ## Unreleased
 
 ### Fixed
+- Consumed pointer-button and pointer-move events for blank-area pans so canvas gestures cannot
+  become document text-selection drags.
+- Routed Gboard select-all, cut, copy, paste, and DPAD navigation through WordCraft's IME event
+  bridge, including shift-selection and Android clipboard paste.
+- Made `imeShow()` idempotent while input focus is already active, so selection synchronization
+  cannot repeatedly request the keyboard.
+- Bumped the launcher generator to version 65 for the IME host changes.
 - Fixed WordCraft 0.12.0 Android build failures by inserting the touch-gesture helper at a stable
   module-level location instead of depending on the renamed canvas mouse-handler signature.
 - Used egui 0.37's active-pointer query for blank-canvas gesture arbitration, avoiding a global
