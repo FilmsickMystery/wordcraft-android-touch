@@ -176,7 +176,7 @@ if app == "wordcraft":
     guard = (
         "/// A two-finger gesture (scroll or pinch) is in progress: a touch press during it is part\n"
         "/// of that gesture, not a click, and any text-selection drag it began must be dropped.\n"
-        "fn touch_gesture_active(ui: &Ui) -> bool {\n"
+        "fn touch_gesture_active(ui: &egui::Ui) -> bool {\n"
         "    ui.input(|i| {\n"
         "        i.events\n"
         "            .iter()\n"
@@ -188,22 +188,17 @@ if app == "wordcraft":
         "    })\n"
         "}\n"
     )
-    mouse_line = (
-        "fn mouse(app: &mut WordApp, ui: &Ui, resp: &egui::Response, rects: &[Rect], "
-        "layout: &DocLayout, scale: f32) {"
-    )
-    # A source that has never been patched: add the guard. A source that already has one
-    # (an earlier builder's, or an upstream that grew its own) gets it updated instead.
-    if "fn touch_gesture_active" not in (src / "crates/ui-egui/src/canvas.rs").read_text():
-        if fix(
-            "crates/ui-egui/src/canvas.rs",
-            mouse_line,
-            guard + "\n" + mouse_line,
-        ):
-            fixed.append("crates/ui-egui/src/canvas.rs (touch gestures start no selection)")
+    # Older upstream revisions used a `mouse` helper, but 0.12.0 renamed it and no longer
+    # has a stable insertion point. Append the helper at module scope instead of relying on
+    # an implementation-specific function signature.
+    canvas_path = src / "crates/ui-egui/src/canvas.rs"
+    canvas_text = canvas_path.read_text()
+    if "fn touch_gesture_active(" not in canvas_text:
+        canvas_path.write_text(canvas_text.rstrip() + "\n\n" + guard + "\n")
+        fixed.append("crates/ui-egui/src/canvas.rs (touch gestures start no selection)")
     elif sub(
         "crates/ui-egui/src/canvas.rs",
-        r"/// A two-finger gesture \(scroll or pinch\) is in progress.*?\nfn touch_gesture_active\(ui: &Ui\) -> bool \{\n.*?\n\}\n",
+        r"/// A two-finger gesture \(scroll or pinch\) is in progress.*?\nfn touch_gesture_active\(ui: &egui::Ui\) -> bool \{\n.*?\n\}\n",
         guard,
     ):
         fixed.append("crates/ui-egui/src/canvas.rs (touch gestures start no selection)")
