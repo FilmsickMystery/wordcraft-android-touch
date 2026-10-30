@@ -304,7 +304,7 @@ if app == "wordcraft":
         "        match phase {\n"
         "            egui::TouchPhase::Start => {\n"
         "                if pan.is_some() { pan = None; block_new_pan = true; }\n"
-        "                let over_ui = ctx.wants_pointer_input()\n"
+        "                let over_ui = ctx.egui_wants_pointer_input()\n"
         "                    || ctx.layer_id_at(pos).is_some_and(|layer| layer != ui.layer_id());\n"
         "                pan = (!block_new_pan && !over_ui && full.contains(pos)\n"
         "                    && !pages.iter().any(|page| page.contains(pos)))\n"

@@ -5,6 +5,7 @@
 ### Fixed
 - Fixed WordCraft 0.12.0 Android build failures by inserting the touch-gesture helper at a stable
   module-level location instead of depending on the renamed canvas mouse-handler signature.
+- Updated the blank-canvas gesture guard to use egui 0.37's `egui_wants_pointer_input` API.
 - Restored WordCraft's Mini Toolbar to its original position above the selected text and prevented
   toolbar-layer taps from being handled as canvas clicks or stealing the canvas IME focus.
 - Kept IME output active while a focused text selection changes, avoiding repeated Gboard
