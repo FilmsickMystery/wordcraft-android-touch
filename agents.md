@@ -116,7 +116,7 @@ The system uses a hybrid approach:
 BUILDER_VERSION="0.2.0"
 UPDATE_API_URL="https://api.github.com/repos/MostafaXS1/artcraft-android/releases/latest"
 UPDATE_PAGE_URL="https://github.com/MostafaXS1/artcraft-android/releases/latest"
-GENERATOR_VERSION="66"  # Bumped when generated launcher template changes
+GENERATOR_VERSION="67"  # Bumped when generated launcher template changes
 ```
 
 **Repository mappings:**
@@ -260,7 +260,7 @@ All other apps use the inline Python generator in `lib/build-common.sh` (startin
 
 ### 10.1 Generator Constants and Flow
 ```python
-GENERATOR_VERSION = "66"
+GENERATOR_VERSION = "67"
 # Marker file: .artcraft-android-builder-generated contains version
 ```
 
@@ -883,6 +883,8 @@ Location: `files/media/`
 
 - **Patched egui-winit** provides system clipboard via JNI `ClipboardManager`
 - **Shell shortcuts** handle Ctrl/Cmd+C/X/V, synthesizing egui Copy/Cut/Paste events
+- **WordCraft Gboard copy/cut** publishes the editor's native selected text to the Android
+  clipboard; Cut still reaches the editor as an egui event
 - Works across apps
 
 ## 22. Updates
@@ -939,7 +941,7 @@ Location: `files/media/`
 - Two-finger slide scrolls document
 - Two-finger pinch zooms
 - The gray margins around pages do not pan the canvas
-- WordCraft Android scrollbars are widened to 28 points, with 4-point inner and outer margins, for touch
+- WordCraft Android scrollbars are widened to 36 points, with 5-point inner and outer margins, for touch
 - Gesture recognition with deadzone:
   - Slide > finger width → scroll
   - Pinch distance change → zoom
@@ -1316,7 +1318,7 @@ SubCraft uses external app-private storage via `install_persist_env()`:
 
 ---
 
-**Document Version:** 66
+**Document Version:** 67
 **Last Updated:** October 25, 2026  
 **Maintained by:** ArtCraft Android Builder Team
 
@@ -1877,7 +1879,7 @@ bash build.sh -app
 ## 51. Version History & Changelog Notes
 
 ### 51.1 Generator Version
-`GENERATOR_VERSION = "66"` in lib/build-common.sh
+`GENERATOR_VERSION = "67"` in lib/build-common.sh
 Bump when launcher template changes significantly.
 
 ### 51.2 Builder Version

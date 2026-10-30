@@ -611,7 +611,7 @@ marker = android_dir / ".artcraft-android-builder-generated"
 # Bump this whenever the generated launcher template changes so stale wrappers (which live in the
 # source checkout and would otherwise be preserved forever) are regenerated automatically instead
 # of failing against a newer app API.
-GENERATOR_VERSION = "66"
+GENERATOR_VERSION = "67"
 
 # A complete adapter supplied by the user wins over auto-detection. This folder is maintained
 # inside the builder, while its contents are copied into this source checkout.
@@ -2847,12 +2847,20 @@ icon = "@mipmap/ic_launcher"
     ime_state_ui_hook = (
         "\n        self.ime.sync_wordcraft_state(ui.ctx());" if app == "wordcraft" else ""
     )
+    ime_poll_hook = (
+        "self.ime.poll_with_clipboard_text(\n"
+        "            raw,\n"
+        '            ctx.data(|data| data.get_temp::<Option<String>>(egui::Id::new("artcraft_android_selected_text")).flatten()),\n'
+        "        );"
+        if app == "wordcraft"
+        else "self.ime.poll(raw);"
+    )
     touch_scrollbar_style_hook = (
         "        {\n"
         "            let scroll = &mut ui.style_mut().spacing.scroll;\n"
-        "            scroll.bar_width = 28.0;\n"
-        "            scroll.bar_inner_margin = 4.0;\n"
-        "            scroll.bar_outer_margin = 4.0;\n"
+        "            scroll.bar_width = 36.0;\n"
+        "            scroll.bar_inner_margin = 5.0;\n"
+        "            scroll.bar_outer_margin = 5.0;\n"
         "        }\n"
         if app == "wordcraft"
         else ""
@@ -3568,7 +3576,7 @@ impl eframe::App for AndroidShell {{
 
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {{
         self.probe.observe(raw);
-        self.ime.poll(raw);
+        {ime_poll_hook}
         self.refresh_fullscreen(raw);
         apply_android_modifiers(&mut self.modifiers, raw);
         self.map_android_back(raw);

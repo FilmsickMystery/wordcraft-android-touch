@@ -443,8 +443,8 @@ if app == "wordcraft":
     ):
         fixed.append("crates/ui-egui/src/scroll.rs (the app makes the coast Android does not send)")
 
-    # Publish WordCraft's committed text window and UTF-8 cursor offsets for the generated
-    # Android IME host, which converts these offsets to UTF-16 for Gboard.
+    # Publish WordCraft's committed text window, native selection, and UTF-8 cursor offsets for
+    # the generated Android IME host, which converts these offsets to UTF-16 for Gboard.
     if fix(
         "crates/ui-egui/src/keys/ime.rs",
         "    let focused = app.canvas.focused && geometry.is_some();\n"
@@ -464,6 +464,30 @@ if app == "wordcraft":
         "    let update = if focused {\n",
     ):
         fixed.append("crates/ui-egui/src/keys/ime.rs (publish committed IME state to Android)")
+    if fix(
+        "crates/ui-egui/src/keys/ime.rs",
+        "            window.as_ref().map(|w| (w.text.clone(), w.cursor, w.anchor)),\n"
+        "        );\n"
+        "    });\n"
+        "    let update = if focused {\n",
+        "            window.as_ref().map(|w| (w.text.clone(), w.cursor, w.anchor)),\n"
+        "        );\n"
+        "    });\n"
+        "    let selected_text = app.session.selected_text();\n"
+        "    let selected_text = if selected_text.is_empty() {\n"
+        "        None\n"
+        "    } else {\n"
+        "        Some(selected_text)\n"
+        "    };\n"
+        "    ctx.data_mut(|data| {\n"
+        "        data.insert_temp(\n"
+        "            egui::Id::new(\"artcraft_android_selected_text\"),\n"
+        "            selected_text,\n"
+        "        );\n"
+        "    });\n"
+        "    let update = if focused {\n",
+    ):
+        fixed.append("crates/ui-egui/src/keys/ime.rs (publish selected document text for Android copy)")
     if fix(
         "crates/ui-egui/src/keys/ime.rs",
         "            let window = ime_window(app);\n",

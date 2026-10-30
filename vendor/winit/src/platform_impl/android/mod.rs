@@ -60,7 +60,7 @@ const PAN_DEADZONE_PX: f64 = 12.0;
 
 /// How far the two fingers' spread must change (physical pixels) before a two-finger gesture can
 /// be a pinch (a zoom) rather than a pan.
-const PINCH_DEADZONE_PX: f64 = 14.0;
+const PINCH_DEADZONE_PX: f64 = 3.0;
 
 /// How much more the two fingers' spread must change than their midpoint moves for a pinch to win
 /// the gesture. A pan holds the fingers a fixed distance apart while the pair slides; a pinch
@@ -248,8 +248,8 @@ pub struct EventLoop<T: 'static> {
     /// The fingers' spread and midpoint where the gesture started: the deadzone is measured
     /// against them.
     gesture_origin: Option<(f64, PhysicalPosition<f64>)>,
-    /// The spread at the last reported pinch step, so each zoom is relative to the last one.
-    gesture_spread: Option<f64>,
+    /// The two stable finger IDs and their last distance, updated on every two-finger move.
+    pinch_tracking: Option<PinchTracker>,
     /// The finger that was already on the glass when a second one joined it: the one whose
     /// touch has to be cancelled when the gesture takes over.
     gesture_pointer: Option<(i32, PhysicalPosition<f64>)>,
@@ -271,6 +271,12 @@ enum Gesture {
     Pan,
     /// A pinch: reported as a zoom.
     Pinch,
+}
+
+#[derive(Clone, Copy)]
+struct PinchTracker {
+    ids: (i32, i32),
+    prev_distance: f64,
 }
 
 /// What a hardware touchpad is doing.
@@ -353,7 +359,7 @@ impl<T: 'static> EventLoop<T> {
             touch_points: Vec::new(),
             gesture: Gesture::Undecided,
             gesture_origin: None,
-            gesture_spread: None,
+            pinch_tracking: None,
             gesture_pointer: None,
             pad_position: None,
             pad_spread: None,
@@ -567,9 +573,23 @@ impl<T: 'static> EventLoop<T> {
                     &mut self.touch_points,
                     remaining_touch_points(motion_event),
                 );
+                if self.touch_points.len() < 2 {
+                    self.pinch_tracking = None;
+                } else if self.touch_points.len() == 2 {
+                    let ids = (self.touch_points[0].0, self.touch_points[1].0);
+                    let same_pair = self.pinch_tracking.is_some_and(|tracking| {
+                        (tracking.ids.0 == ids.0 && tracking.ids.1 == ids.1)
+                            || (tracking.ids.0 == ids.1 && tracking.ids.1 == ids.0)
+                    });
+                    if !same_pair {
+                        self.pinch_tracking = self.touch_spread().map(|distance| PinchTracker {
+                            ids,
+                            prev_distance: distance,
+                        });
+                    }
+                }
                 self.gesture = Gesture::Undecided;
                 self.gesture_origin = None;
-                self.gesture_spread = None;
                 // The finger that was already on the glass when this one joined: the one whose
                 // touch has to be cancelled when the gesture takes over.
                 self.gesture_pointer = previous.first().copied();
@@ -584,7 +604,9 @@ impl<T: 'static> EventLoop<T> {
                     self.sync_touch_points(motion_event);
                     self.gesture = Gesture::Undecided;
                     self.gesture_origin = None;
-                    self.gesture_spread = None;
+                    if self.touch_points.len() < 2 {
+                        self.pinch_tracking = None;
+                    }
                     return GestureStep::None;
                 }
                 let Some(midpoint) = self.touch_midpoint() else {
@@ -600,6 +622,29 @@ impl<T: 'static> EventLoop<T> {
                 };
                 let Some(new_spread) = self.touch_spread() else {
                     return GestureStep::None;
+                };
+                let ids = (self.touch_points[0].0, self.touch_points[1].0);
+                let pinch_factor = match self.pinch_tracking.as_mut() {
+                    Some(tracking)
+                        if (tracking.ids.0 == ids.0 && tracking.ids.1 == ids.1)
+                            || (tracking.ids.0 == ids.1 && tracking.ids.1 == ids.0) =>
+                    {
+                        let previous = tracking.prev_distance;
+                        tracking.prev_distance = new_spread;
+                        if previous.is_finite() && previous > 0.0 && new_spread.is_finite() {
+                            let factor = new_spread / previous;
+                            (factor.is_finite() && factor > 0.0).then_some(factor)
+                        } else {
+                            None
+                        }
+                    }
+                    _ => {
+                        self.pinch_tracking = Some(PinchTracker {
+                            ids,
+                            prev_distance: new_spread,
+                        });
+                        None
+                    }
                 };
 
                 // The deadzone is measured from where the gesture started.
@@ -639,12 +684,7 @@ impl<T: 'static> EventLoop<T> {
 
                 match self.gesture {
                     Gesture::Pinch => {
-                        // The zoom is relative to the last step, so a pinch that starts at the
-                        // deadzone's edge does not jump: the spread change that got us here is
-                        // the deadzone's, and the zoom starts from where the fingers are now.
-                        let last = self.gesture_spread.replace(new_spread).unwrap_or(new_spread);
-                        let factor = if last > 0.0 { new_spread / last } else { 1.0 };
-                        GestureStep::Pinch(factor)
+                        pinch_factor.map_or(GestureStep::None, GestureStep::Pinch)
                     }
                     Gesture::Pan => {
                         // The fingers' midpoint moved: that is the scroll. The delta is signed
@@ -677,19 +717,7 @@ impl<T: 'static> EventLoop<T> {
                 )
             })
             .collect();
-        if seen.len() == self.touch_points.len() {
-            // Same fingers: just refresh their positions.
-            self.touch_points = seen;
-            return;
-        }
-        // The finger count changed mid-gesture (e.g. a third finger landed): keep the ones we know
-        // and adopt the new ones, so the midpoint stays meaningful for the fingers we do track.
-        for (id, position) in seen {
-            match self.touch_points.iter_mut().find(|(known, _)| *known == id) {
-                Some((_, known_position)) => *known_position = position,
-                None => self.touch_points.push((id, position)),
-            }
-        }
+        self.touch_points = seen;
     }
 
     /// The midpoint of exactly two tracked fingers, if both are known.

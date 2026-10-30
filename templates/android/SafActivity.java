@@ -1026,6 +1026,26 @@ public final class __CLASS__ extends GameActivity {
         return text != null ? text.toString() : "";
     }
 
+    public void copyToClipboard(String text) {
+        if (text == null) {
+            return;
+        }
+        runOnUiThread(() -> {
+            try {
+                android.content.ClipboardManager clipboard =
+                        (android.content.ClipboardManager)
+                                getSystemService(Context.CLIPBOARD_SERVICE);
+                if (clipboard == null) {
+                    Log.e(TAG, "Could not copy WordCraft text: clipboard service is unavailable");
+                    return;
+                }
+                clipboard.setPrimaryClip(ClipData.newPlainText("WordCraft", text));
+            } catch (RuntimeException error) {
+                Log.e(TAG, "Could not copy WordCraft text to the system clipboard", error);
+            }
+        });
+    }
+
     /**
      * Whether a delete call should be handed to the shell, or dropped as the second half of one
      * press an IME reported twice.

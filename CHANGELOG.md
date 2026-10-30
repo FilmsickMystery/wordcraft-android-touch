@@ -4,10 +4,12 @@
 
 ### Fixed
 - Fully removed gray-margin touch panning and its pointer-event interception for existing and
-  future source checkouts; enlarged WordCraft's touch scrollbar to 28 points with 4-point margins.
-- Routed Gboard paste directly through `InputConnection.commitText`; copy and cut continue through
-  WordCraft's native egui Copy/Cut events.
-- Bumped the launcher generator to version 66 for the scrollbar style update.
+  future source checkouts; enlarged WordCraft's touch scrollbar to 36 points with 5-point margins.
+- Made touchscreen pinch zoom update from the same tracked pair of finger IDs and each consecutive
+  distance change, with a smaller recognition deadzone for more continuous response.
+- Routed Gboard copy/cut text from WordCraft's active selection to Android's system clipboard while
+  preserving WordCraft's native Copy/Cut events; paste still uses `InputConnection.commitText`.
+- Bumped the launcher generator to version 67 for the clipboard bridge and scrollbar style update.
 - Routed Gboard select-all, cut, copy, paste, and DPAD navigation through WordCraft's IME event
   bridge, including shift-selection and Android clipboard paste.
 - Made `imeShow()` idempotent while input focus is already active, so selection synchronization

@@ -47,6 +47,15 @@ pub mod ime {
         /// Translate every keyboard event the Activity has queued since the last frame into the egui
         /// IME events the focused `TextEdit` understands. Call once per frame from `raw_input_hook`.
         pub fn poll(&mut self, raw: &mut egui::RawInput) {
+            self.poll_with_clipboard_text(raw, None);
+        }
+
+        /// Route Gboard's document copy/cut actions through Android's system clipboard.
+        pub fn poll_with_clipboard_text(
+            &mut self,
+            raw: &mut egui::RawInput,
+            selected_text: Option<String>,
+        ) {
             if self.unsupported {
                 return;
             }
@@ -82,8 +91,19 @@ pub mod ime {
                                 repeat: step > 0,
                                 modifiers: egui::Modifiers::default(),
                             }));
-                        } else if let Some(event) = translate(&event) {
-                            raw.events.push(event);
+                        } else {
+                            if matches!(event.as_str(), "y" | "z") {
+                                if let Some(text) = selected_text.as_deref() {
+                                    if let Err(error) = self.copy_to_clipboard(text) {
+                                        log::warn!(
+                                            "Could not copy WordCraft's selected text to Android's clipboard: {error}"
+                                        );
+                                    }
+                                }
+                            }
+                            if let Some(event) = translate(&event) {
+                                raw.events.push(event);
+                            }
                         }
                     }
                     Ok(None) => break,
@@ -94,6 +114,26 @@ pub mod ime {
                     }
                 }
             }
+        }
+
+        fn copy_to_clipboard(&self, text: &str) -> Result<(), String> {
+            self.vm
+                .attach_current_thread(|env| -> jni::errors::Result<()> {
+                    let activity_raw = self.app.activity_as_ptr() as jni::sys::jobject;
+                    let activity = unsafe { env.as_cast_raw::<JObject>(&activity_raw)? };
+                    let text = JObject::from(env.new_string(text)?);
+                    if let Err(error) = env.call_method(
+                        &*activity,
+                        jni_str!("copyToClipboard"),
+                        jni_sig!("(Ljava/lang/String;)V"),
+                        &[JValue::Object(&text)],
+                    ) {
+                        env.exception_clear();
+                        return Err(error);
+                    }
+                    Ok(())
+                })
+                .map_err(|error| error.to_string())
         }
 
         /// Keep the Android IME host aligned with WordCraft's committed text window and selection.
