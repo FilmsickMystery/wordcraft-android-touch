@@ -60,12 +60,15 @@ const PAN_DEADZONE_PX: f64 = 12.0;
 
 /// How far the two fingers' spread must change (physical pixels) before a two-finger gesture can
 /// be a pinch (a zoom) rather than a pan.
-const PINCH_DEADZONE_PX: f64 = 36.0;
+const PINCH_DEADZONE_PX: f64 = 14.0;
 
 /// How much more the two fingers' spread must change than their midpoint moves for a pinch to win
 /// the gesture. A pan holds the fingers a fixed distance apart while the pair slides; a pinch
 /// mostly changes the distance. Well above 1, so a slightly uneven drag still scrolls.
-const PINCH_SPREAD_RATIO: f64 = 1.5;
+const PINCH_SPREAD_RATIO: f64 = 1.2;
+
+/// Amplify small per-frame spread changes so touchscreen zoom responds like a trackpad pinch.
+const PINCH_ZOOM_SENSITIVITY: f64 = 1.5;
 
 /// How much faster a two-finger pan scrolls than the fingers move.
 const PAN_SPEED: f64 = 1.5;
@@ -1111,7 +1114,7 @@ impl<T: 'static> EventLoop<T> {
                                             device_id,
                                             // The log of the factor: `egui` turns it back into
                                             // the factor itself.
-                                            delta: factor.ln(),
+                                            delta: factor.ln() * PINCH_ZOOM_SENSITIVITY,
                                             phase: event::TouchPhase::Moved,
                                         },
                                     },

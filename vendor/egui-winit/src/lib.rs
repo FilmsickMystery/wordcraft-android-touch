@@ -1219,7 +1219,13 @@ impl State {
 
         self.apply_cursor(window, event_loop, cursor_icon, cursor_image.as_ref());
 
-        let allow_ime = ime.is_some();
+        // Selection drags can briefly omit IME output while egui changes the active selection
+        // widget. Keep an already-open Android input connection alive until the pointer lifts;
+        // the next settled frame can then hide it normally if focus really moved away.
+        let allow_ime = ime.is_some()
+            || (cfg!(target_os = "android")
+                && self.allow_ime
+                && self.egui_ctx.input(|input| input.pointer.any_down()));
         let is_toggling_ime = self.allow_ime != allow_ime;
         if is_toggling_ime {
             self.allow_ime = allow_ime;

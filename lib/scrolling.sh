@@ -304,7 +304,7 @@ if app == "wordcraft":
         "        match phase {\n"
         "            egui::TouchPhase::Start => {\n"
         "                if pan.is_some() { pan = None; block_new_pan = true; }\n"
-        "                let over_ui = ctx.egui_wants_pointer_input()\n"
+        "                        let over_ui = ctx.egui_is_using_pointer()\n"
         "                    || ctx.layer_id_at(pos).is_some_and(|layer| layer != ui.layer_id());\n"
         "                pan = (!block_new_pan && !over_ui && full.contains(pos)\n"
         "                    && !pages.iter().any(|page| page.contains(pos)))\n"
@@ -454,65 +454,31 @@ if app == "wordcraft":
     ):
         fixed.append("crates/ui-egui/src/canvas.rs (keep IME active for non-collapsed selection)")
 
-    # A blank-area pan should not steal the document's text focus or raise the keyboard.
-    if fix(
-        "crates/ui-egui/src/canvas.rs",
-        "    let focus_click = pointer_click || accesskit_click || resp.drag_started();\n",
-        "    let blank_touch_pan = crate::canvas::android_blank_touch_pan_active(ui.ctx());\n"
-        "    let touch_gesture = crate::canvas::touch_gesture_active(ui);\n"
-        "    let pointer_over_overlay = crate::canvas::android_pointer_over_overlay(ui);\n"
-        "    let focus_click = !touch_gesture\n"
-        "        && !pointer_over_overlay\n"
-        "        && (((pointer_click || resp.drag_started()) && !blank_touch_pan) || accesskit_click);\n",
-    ):
-        fixed.append("crates/ui-egui/src/canvas.rs (a scroll or a draw takes no focus)")
-
-    # Upgrade focus patches already present in reused source checkouts.
-    for old, new in (
-        (
-            "    let focus_click = ((pointer_click || resp.drag_started()) && !blank_touch_pan) || accesskit_click;\n",
-            "    let pointer_over_overlay = crate::canvas::android_pointer_over_overlay(ui);\n"
-            "    let focus_click = !crate::canvas::touch_gesture_active(ui)\n"
-            "        && !pointer_over_overlay\n"
-            "        && (((pointer_click || resp.drag_started()) && !blank_touch_pan) || accesskit_click);\n",
-        ),
-        (
-            "    let middle_gesture = app.canvas.auto_scroll.blocks_input();\n"
-            "    let is_drawing =",
-            "    let middle_gesture = app.canvas.auto_scroll.blocks_input();\n"
-            "    let blank_touch_pan = crate::canvas::android_blank_touch_pan_active(ui.ctx());\n"
-            "    let is_drawing =",
-        ),
-        (
-            "    let is_text_drag = resp.drag_started()\n"
-            "        && !middle_gesture\n"
-            "        && !is_drawing\n",
-            "    let is_text_drag = resp.drag_started()\n"
-            "        && !middle_gesture\n"
-            "        && !blank_touch_pan\n"
-            "        && !is_drawing\n",
-        ),
-        (
-            "    let focus_click = (pointer_click && !is_drawing) || accesskit_click || is_text_drag;\n",
-            "    let focus_click = !touch_gesture_active(ui)\n"
-            "        && ((pointer_click && !is_drawing && !blank_touch_pan) || accesskit_click || is_text_drag);\n",
-        ),
-        (
-            "    let focus_click = (pointer_click && !is_drawing && !blank_touch_pan) || accesskit_click || is_text_drag;\n",
-            "    let focus_click = !touch_gesture_active(ui)\n"
-            "        && ((pointer_click && !is_drawing && !blank_touch_pan) || accesskit_click || is_text_drag);\n",
-        ),
-    ):
-        if upgrade("crates/ui-egui/src/canvas.rs", old, new):
-            fixed.append("crates/ui-egui/src/canvas.rs (upgrade blank-area pan focus handling)")
-
-    # Remove the unused pan-state read inserted by an earlier builder patch in finish_canvas_frame.
-    rewrite(
-        "crates/ui-egui/src/canvas.rs",
-        "    let blank_touch_pan = crate::canvas::android_blank_touch_pan_active(ui.ctx());\n"
-        "    handle_primary_pointer(app, ui, &resp, &rects, layout, geo, middle_gesture);\n",
-        "    handle_primary_pointer(app, ui, &resp, &rects, layout, geo, middle_gesture);\n",
+    # The canvas owns IME focus only for taps on a page. A drag on touch must not focus
+    # immediately: the second finger may turn it into a pinch after the first frame.
+    focus_block = (
+        "    let pointer_click = resp.clicked_by(egui::PointerButton::Primary);\n"
+        "    let accesskit_click = resp.clicked() && !pointer_click && !keyboard_click;\n"
+        "    let pointer_pos = ui.input(|i| i.pointer.interact_pos());\n"
+        "    let page_tap = pointer_pos.is_some_and(|pos| {\n"
+        "        app.canvas.page_rects.iter().any(|page| page.contains(pos))\n"
+        "            && ui.ctx().layer_id_at(pos).is_some_and(|layer| layer == resp.layer_id)\n"
+        "    });\n"
+        "    let touch_event = ui.input(|i| i.events.iter().any(|event| matches!(event, egui::Event::Touch { .. })));\n"
+        "    let drag_focus = !touch_event && resp.drag_started() && page_tap;\n"
+        "    let focus_click = !crate::canvas::touch_gesture_active(ui)\n"
+        "        && ((pointer_click && page_tap) || drag_focus || accesskit_click);\n"
+        "    if focus_click {\n"
     )
+    if sub(
+        "crates/ui-egui/src/canvas.rs",
+        r"    let pointer_click = resp\.clicked_by\(egui::PointerButton::Primary\);\n"
+        r"    let accesskit_click = resp\.clicked\(\) && !pointer_click && !keyboard_click;\n"
+        r".*?    if focus_click \{\n",
+        focus_block,
+    ):
+        fixed.append("crates/ui-egui/src/canvas.rs (focus only for page editing)")
+
 
     # The flick's coast. The upstream constant leaves the momentum to the platform on the
     # platforms that send their own: macOS and Windows (they report the lift, and a touchpad
