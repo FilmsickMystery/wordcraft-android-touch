@@ -203,13 +203,12 @@ if app == "wordcraft":
     ):
         fixed.append("crates/ui-egui/src/canvas.rs (touch gestures start no selection)")
 
-    # Do not begin a selection on a press that is part of a gesture or blank-area pan.
+    # Do not begin a selection on a press that is part of a multitouch gesture.
     if fix(
         "crates/ui-egui/src/canvas.rs",
         "    let pressed = ui.input(|i| i.pointer.primary_pressed()) && resp.contains_pointer() && !over_balloon(app, p);\n",
         "    let pressed = ui.input(|i| i.pointer.primary_pressed())\n"
         "        && !touch_gesture_active(ui)\n"
-        "        && !android_blank_touch_pan_active(ui.ctx())\n"
         "        && !android_pointer_over_overlay(ui)\n"
         "        && resp.contains_pointer()\n"
         "        && !over_balloon(app, p);\n",
@@ -223,22 +222,20 @@ if app == "wordcraft":
         "        && !over_balloon(app, p);\n",
         "    let pressed = ui.input(|i| i.pointer.primary_pressed())\n"
         "        && !touch_gesture_active(ui)\n"
-        "        && !android_blank_touch_pan_active(ui.ctx())\n"
         "        && !android_pointer_over_overlay(ui)\n"
         "        && resp.contains_pointer()\n"
         "        && !over_balloon(app, p);\n",
     ):
-        fixed.append("crates/ui-egui/src/canvas.rs (blank pans do not select text)")
+        fixed.append("crates/ui-egui/src/canvas.rs (multitouch does not select text)")
     elif upgrade(
         "crates/ui-egui/src/canvas.rs",
         "    let pressed = ui.input(|i| i.pointer.primary_pressed())\n"
         "        && !touch_gesture_active(ui)\n"
-        "        && !android_blank_touch_pan_active(ui.ctx())\n"
+        "        && !android_pointer_over_overlay(ui)\n"
         "        && resp.contains_pointer()\n"
         "        && !over_balloon(app, p);\n",
         "    let pressed = ui.input(|i| i.pointer.primary_pressed())\n"
         "        && !touch_gesture_active(ui)\n"
-        "        && !android_blank_touch_pan_active(ui.ctx())\n"
         "        && !android_pointer_over_overlay(ui)\n"
         "        && resp.contains_pointer()\n"
         "        && !over_balloon(app, p);\n",
@@ -253,7 +250,7 @@ if app == "wordcraft":
         "        && ui.input(|i| i.pointer.primary_down())\n"
         "        && let Some(d) = app.canvas.unit_drag.as_mut()\n",
         "    } else if app.canvas.dragging\n"
-        "        && (touch_gesture_active(ui) || android_blank_touch_pan_active(ui.ctx()))\n"
+        "        && touch_gesture_active(ui)\n"
         "    {\n"
         "        // A gesture took over: stop selecting and forget the drag.\n"
         "        app.canvas.cancel_text_drag();\n"
@@ -268,85 +265,49 @@ if app == "wordcraft":
         "        // A two-finger scroll took over: stop selecting and forget the drag.\n"
         "        app.canvas.cancel_text_drag();\n",
         "    } else if app.canvas.dragging\n"
-        "        && (touch_gesture_active(ui) || android_blank_touch_pan_active(ui.ctx()))\n"
+        "        && touch_gesture_active(ui)\n"
         "    {\n"
         "        // A gesture took over: stop selecting and forget the drag.\n"
         "        app.canvas.cancel_text_drag();\n",
     ):
-        fixed.append("crates/ui-egui/src/canvas.rs (blank pans cancel text selection)")
+        fixed.append("crates/ui-egui/src/canvas.rs (multitouch cancels text selection)")
 
-    # A one-finger drag that starts in blank canvas space is a pan, not a caret selection.
-    # Only claim it when the point is not handled by a widget or an overlay layer.
-    blank_pan_state = (
-        "#[derive(Clone, Copy)]\n"
-        "struct AndroidBlankPan { id: egui::TouchId, last: egui::Pos2, ending: bool }\n"
-    )
-    blank_pan_scroll = (
-        "fn android_blank_touch_scroll(ui: &egui::Ui, full: egui::Rect, pages: &[egui::Rect]) -> egui::Vec2 {\n"
-        "    if !cfg!(target_os = \"android\") {\n"
-        "        return egui::Vec2::ZERO;\n"
-        "    }\n"
-        "    let touches = ui.input(|input| {\n"
-        "        input.events.iter().filter_map(|event| match event {\n"
-        "            egui::Event::Touch { id, phase, pos, .. } => Some((*id, *phase, *pos)),\n"
-        "            _ => None,\n"
-        "        }).collect::<Vec<_>>()\n"
-        "    });\n"
-        "    let ctx = ui.ctx();\n"
-        "    let state_id = egui::Id::new(\"wordcraft_android_blank_pan\");\n"
-        "    let mut pan = ctx.data(|data| data.get_temp::<AndroidBlankPan>(state_id));\n"
-        "    let gesture_active = touch_gesture_active(ui);\n"
-        "    if gesture_active { pan = None; }\n"
-        "    if touches.is_empty() && pan.is_some_and(|active| active.ending) { pan = None; }\n"
-        "    let mut delta = egui::Vec2::ZERO;\n"
-        "    let mut block_new_pan = gesture_active;\n"
-        "    for (id, phase, pos) in touches {\n"
-        "        match phase {\n"
-        "            egui::TouchPhase::Start => {\n"
-        "                if pan.is_some() { pan = None; block_new_pan = true; }\n"
-        "                        let over_ui = ctx.egui_is_using_pointer()\n"
-        "                    || ctx.layer_id_at(pos).is_some_and(|layer| layer != ui.layer_id());\n"
-        "                pan = (!block_new_pan && !over_ui && full.contains(pos)\n"
-        "                    && !pages.iter().any(|page| page.contains(pos)))\n"
-        "                    .then_some(AndroidBlankPan { id, last: pos, ending: false });\n"
-        "            }\n"
-        "            egui::TouchPhase::Move => {\n"
-        "                if let Some(active) = pan.as_mut().filter(|active| active.id == id) {\n"
-        "                    delta += active.last - pos;\n"
-        "                    active.last = pos;\n"
-        "                    active.ending = false;\n"
-        "                }\n"
-        "            }\n"
-        "            egui::TouchPhase::End | egui::TouchPhase::Cancel => {\n"
-        "                if let Some(active) = pan.as_mut().filter(|active| active.id == id) {\n"
-        "                    active.ending = true;\n"
-        "                }\n"
-        "            }\n"
-        "        }\n"
-        "    }\n"
-        "    if pan.is_some() || gesture_active {\n"
-        "        ctx.input_mut(|input| {\n"
-        "            input.events.retain(|event| !matches!(event,\n"
-        "                egui::Event::PointerMoved(_)\n"
-        "                    | egui::Event::PointerButton { .. }\n"
-        "                    | egui::Event::PointerGone\n"
-        "            ));\n"
-        "        });\n"
-        "    }\n"
-        "    ctx.data_mut(|data| {\n"
-        "        if let Some(active) = pan { data.insert_temp(state_id, active); }\n"
-        "        else { data.remove::<AndroidBlankPan>(state_id); }\n"
-        "    });\n"
-        "    delta\n"
-        "}\n"
-    )
-    blank_pan_active = (
-        "fn android_blank_touch_pan_active(ctx: &egui::Context) -> bool {\n"
-        "    cfg!(target_os = \"android\") && ctx.data(|data| {\n"
-        "        data.get_temp::<AndroidBlankPan>(egui::Id::new(\"wordcraft_android_blank_pan\")).is_some()\n"
-        "    })\n"
-        "}\n"
-    )
+    canvas_path = src / "crates/ui-egui/src/canvas.rs"
+    try:
+        canvas_text = canvas_path.read_text()
+    except OSError:
+        canvas_text = ""
+    if canvas_text:
+        original_canvas_text = canvas_text
+        canvas_text = re.sub(
+            r"\n#\[derive\(Clone, Copy\)\]\nstruct AndroidBlankPan \{.*?"
+            r"fn android_blank_touch_pan_active\(ctx: &egui::Context\) -> bool \{\n.*?\n\}\n?",
+            "\n",
+            canvas_text,
+            count=1,
+            flags=re.S,
+        )
+        canvas_text = re.sub(
+            r"    let blank_touch_delta = if !app\.session\.view\.read_mode \{\n"
+            r"        android_blank_touch_scroll\(ui, full, &app\.canvas\.page_rects\)\n"
+            r"    \} else \{\n"
+            r"        egui::Vec2::ZERO\n"
+            r"    \};\n"
+            r"    let wheel_delta = wheel_delta \+ blank_touch_delta;\n",
+            "",
+            canvas_text,
+            count=1,
+        )
+        canvas_text = canvas_text.replace(
+            "        && !android_blank_touch_pan_active(ui.ctx())\n", ""
+        )
+        canvas_text = canvas_text.replace(
+            "        && (touch_gesture_active(ui) || android_blank_touch_pan_active(ui.ctx()))\n",
+            "        && touch_gesture_active(ui)\n",
+        )
+        if canvas_text != original_canvas_text:
+            canvas_path.write_text(canvas_text)
+            fixed.append("crates/ui-egui/src/canvas.rs (remove blank-area touch panning)")
     overlay_guard = (
         "fn android_pointer_over_overlay(ui: &egui::Ui) -> bool {\n"
         "    ui.input(|input| input.pointer.interact_pos())\n"
@@ -354,48 +315,9 @@ if app == "wordcraft":
         "        .is_some_and(|layer| layer != ui.layer_id())\n"
         "}\n"
     )
-
-    canvas_path = src / "crates/ui-egui/src/canvas.rs"
-    try:
-        canvas_text = canvas_path.read_text()
-    except OSError:
-        canvas_text = ""
-    blank_pan_helpers = []
-    if (
-        ("fn android_blank_touch_scroll(" not in canvas_text
-         or "fn android_blank_touch_pan_active(" not in canvas_text)
-        and "struct AndroidBlankPan {" not in canvas_text
-    ):
-        blank_pan_helpers.append(blank_pan_state)
-    if "fn android_blank_touch_scroll(" not in canvas_text:
-        blank_pan_helpers.append(blank_pan_scroll)
-    if "fn android_blank_touch_pan_active(" not in canvas_text:
-        blank_pan_helpers.append(blank_pan_active)
-    if "fn android_pointer_over_overlay(" not in canvas_text:
-        blank_pan_helpers.append(overlay_guard)
-    if blank_pan_helpers and canvas_text:
-        canvas_path.write_text(canvas_text.rstrip() + "\n\n" + "\n".join(blank_pan_helpers) + "\n")
-        fixed.append("crates/ui-egui/src/canvas.rs (single-finger blank-area scrolling)")
-    elif canvas_text and "fn android_blank_touch_scroll(" in canvas_text:
-        if sub(
-            "crates/ui-egui/src/canvas.rs",
-            r"fn android_blank_touch_scroll\(ui: &egui::Ui, full: egui::Rect, pages: &\[egui::Rect\]\) -> egui::Vec2 \{\n.*?\n\}\n",
-            blank_pan_scroll,
-        ):
-            fixed.append("crates/ui-egui/src/canvas.rs (block blank-area pans over UI)")
-
-    if fix(
-        "crates/ui-egui/src/canvas.rs",
-        "    // Dragging a selection near the viewport's edge scrolls on (#688): from a crawl at the margin\n",
-        "    let blank_touch_delta = if !app.session.view.read_mode {\n"
-        "        android_blank_touch_scroll(ui, full, &app.canvas.page_rects)\n"
-        "    } else {\n"
-        "        egui::Vec2::ZERO\n"
-        "    };\n"
-        "    let wheel_delta = wheel_delta + blank_touch_delta;\n"
-        "    // Dragging a selection near the viewport's edge scrolls on (#688): from a crawl at the margin\n",
-    ):
-        fixed.append("crates/ui-egui/src/canvas.rs (blank-area gestures use the wheel scroll path)")
+    if canvas_text and "fn android_pointer_over_overlay(" not in canvas_text:
+        canvas_path.write_text(canvas_text.rstrip() + "\n\n" + overlay_guard)
+        fixed.append("crates/ui-egui/src/canvas.rs (preserve overlay input guard)")
 
     # Undo the prior builder's keyboard-docked toolbar patch in reused source checkouts.
     toolbar_anchor = "    let Some(bar) = anchor_rect(selection.min.y, selection.min.x, viewport) else { return };\n"

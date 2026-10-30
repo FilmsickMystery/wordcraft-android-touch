@@ -116,7 +116,7 @@ The system uses a hybrid approach:
 BUILDER_VERSION="0.2.0"
 UPDATE_API_URL="https://api.github.com/repos/MostafaXS1/artcraft-android/releases/latest"
 UPDATE_PAGE_URL="https://github.com/MostafaXS1/artcraft-android/releases/latest"
-GENERATOR_VERSION="65"  # Bumped when generated launcher template changes
+GENERATOR_VERSION="66"  # Bumped when generated launcher template changes
 ```
 
 **Repository mappings:**
@@ -260,7 +260,7 @@ All other apps use the inline Python generator in `lib/build-common.sh` (startin
 
 ### 10.1 Generator Constants and Flow
 ```python
-GENERATOR_VERSION = "65"
+GENERATOR_VERSION = "66"
 # Marker file: .artcraft-android-builder-generated contains version
 ```
 
@@ -474,7 +474,7 @@ From app semver (ndk-build2 compatible).
   - `"f"` - finish composing
   - `"d"<before>,<after>` - delete surrounding
   - `"a"<actionCode>` - editor action
-  - `"x"`, `"y"`, `"z"`, `"v"<text>` - select all, cut, copy, paste
+  - `"x"`, `"y"`, `"z"` - select all, cut, copy
   - `"k"<direction>,<shift>,<repeat>` - DPAD navigation
 - `imeShow()` / `imeHide()` control keyboard
 - `imePoll()` returns queued events
@@ -571,7 +571,7 @@ Converts queued events from Java:
 - `"f"` → Finish composition
 - `"d<before>,<after>"` → Delete events
 - `"a<action>"` → Editor action
-- `"x"`, `"y"`, `"z"`, `"v<text>"` → Select all, cut, copy, and paste
+- `"x"`, `"y"`, `"z"` → Select all, cut, and copy; paste uses `InputConnection.commitText`
 - `"k<direction>,<shift>,<repeat>"` → Left/right/up/down navigation keys
 
 ### 13.4 `templates/android/system_fonts.rs`
@@ -938,6 +938,8 @@ Location: `files/media/`
 ### 24.3 Touch
 - Two-finger slide scrolls document
 - Two-finger pinch zooms
+- The gray margins around pages do not pan the canvas
+- WordCraft Android scrollbars are widened to 28 points, with 4-point inner and outer margins, for touch
 - Gesture recognition with deadzone:
   - Slide > finger width → scroll
   - Pinch distance change → zoom
@@ -1314,7 +1316,7 @@ SubCraft uses external app-private storage via `install_persist_env()`:
 
 ---
 
-**Document Version:** 65
+**Document Version:** 66
 **Last Updated:** October 25, 2026  
 **Maintained by:** ArtCraft Android Builder Team
 
@@ -1875,7 +1877,7 @@ bash build.sh -app
 ## 51. Version History & Changelog Notes
 
 ### 51.1 Generator Version
-`GENERATOR_VERSION = "65"` in lib/build-common.sh
+`GENERATOR_VERSION = "66"` in lib/build-common.sh
 Bump when launcher template changes significantly.
 
 ### 51.2 Builder Version

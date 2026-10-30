@@ -634,10 +634,7 @@ public final class __CLASS__ extends GameActivity {
                             if (id == android.R.id.paste) {
                                 try {
                                     String text = readImeClipboardText();
-                                    if (!text.isEmpty()) {
-                                        queueImeEvent("v" + text);
-                                    }
-                                    return true;
+                                    return text.isEmpty() || this.commitText(text, 1);
                                 } catch (RuntimeException error) {
                                     Log.e(TAG, "Could not read the clipboard for Gboard paste", error);
                                     return false;

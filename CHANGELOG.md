@@ -3,8 +3,11 @@
 ## Unreleased
 
 ### Fixed
-- Consumed pointer-button and pointer-move events for blank-area pans so canvas gestures cannot
-  become document text-selection drags.
+- Fully removed gray-margin touch panning and its pointer-event interception for existing and
+  future source checkouts; enlarged WordCraft's touch scrollbar to 28 points with 4-point margins.
+- Routed Gboard paste directly through `InputConnection.commitText`; copy and cut continue through
+  WordCraft's native egui Copy/Cut events.
+- Bumped the launcher generator to version 66 for the scrollbar style update.
 - Routed Gboard select-all, cut, copy, paste, and DPAD navigation through WordCraft's IME event
   bridge, including shift-selection and Android clipboard paste.
 - Made `imeShow()` idempotent while input focus is already active, so selection synchronization
@@ -12,10 +15,8 @@
 - Bumped the launcher generator to version 65 for the IME host changes.
 - Fixed WordCraft 0.12.0 Android build failures by inserting the touch-gesture helper at a stable
   module-level location instead of depending on the renamed canvas mouse-handler signature.
-- Used egui 0.37's active-pointer query for blank-canvas gesture arbitration, avoiding a global
-  pointer-interest check that blocked pans over the canvas.
-- Restored blank-margin touch panning, prevented non-page taps and touch-drag starts from focusing
-  the document canvas, and made touchscreen pinch zoom more responsive.
+- Prevented non-page taps and touch-drag starts from focusing the document canvas, and made
+  touchscreen pinch zoom more responsive; gray margins do not pan the canvas.
 - Kept an already-open Android IME connection active during pointer drags so transient selection
   frames in menus do not hide and reopen the keyboard.
 - Restored WordCraft's Mini Toolbar to its original position above the selected text and prevented

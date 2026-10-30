@@ -303,7 +303,7 @@ pub mod ime {
 
     /// Decode one queued event. The first character tags it and the rest is the payload:
     /// `c` commit, `p` pre-edit, `f` finish composing, `d` delete `before,after`, `a` editor action,
-    /// `x/y/z/v` select all/cut/copy/paste.
+    /// `x/y/z` select all/cut/copy.
     fn translate(event: &str) -> Option<egui::Event> {
         let mut chars = event.chars();
         let tag = chars.next()?;
@@ -346,7 +346,6 @@ pub mod ime {
             }
             'y' => Some(egui::Event::Cut),
             'z' => Some(egui::Event::Copy),
-            'v' => Some(egui::Event::Paste(payload.to_owned())),
             _ => None,
         }
     }

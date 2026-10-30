@@ -611,7 +611,7 @@ marker = android_dir / ".artcraft-android-builder-generated"
 # Bump this whenever the generated launcher template changes so stale wrappers (which live in the
 # source checkout and would otherwise be preserved forever) are regenerated automatically instead
 # of failing against a newer app API.
-GENERATOR_VERSION = "65"
+GENERATOR_VERSION = "66"
 
 # A complete adapter supplied by the user wins over auto-detection. This folder is maintained
 # inside the builder, while its contents are copied into this source checkout.
@@ -2847,6 +2847,16 @@ icon = "@mipmap/ic_launcher"
     ime_state_ui_hook = (
         "\n        self.ime.sync_wordcraft_state(ui.ctx());" if app == "wordcraft" else ""
     )
+    touch_scrollbar_style_hook = (
+        "        {\n"
+        "            let scroll = &mut ui.style_mut().spacing.scroll;\n"
+        "            scroll.bar_width = 28.0;\n"
+        "            scroll.bar_inner_margin = 4.0;\n"
+        "            scroll.bar_outer_margin = 4.0;\n"
+        "        }\n"
+        if app == "wordcraft"
+        else ""
+    )
 
     # The Android back button asks the app before it leaves, so an app with unsaved work opens
     # its own "quit without saving?" prompt instead of the app disappearing. The check is the
@@ -3537,6 +3547,7 @@ impl eframe::App for AndroidShell {{
 
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {{
         system_fonts::install_system_fonts(ui.ctx());
+{touch_scrollbar_style_hook}
         {inner_ui}{ime_state_ui_hook}
         if self.back_pending {{
             self.back_pending = false;
