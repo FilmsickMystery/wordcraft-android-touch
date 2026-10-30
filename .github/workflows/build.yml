@@ -61,7 +61,7 @@ jobs:
       matrix:
         app:
           - wordcraft
-          
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -218,9 +218,9 @@ jobs:
         uses: actions/download-artifact@v4
         continue-on-error: true
         with:
-         path: all-apks
-         pattern: '*-apk'
-        merge-multiple: true
+          path: all-apks
+          pattern: '*-apk'
+          merge-multiple: true
 
       - name: Validate and prune APKs
         id: check_apks
