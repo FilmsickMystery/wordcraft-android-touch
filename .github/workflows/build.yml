@@ -208,23 +208,23 @@ jobs:
           path: logs/
           if-no-files-found: ignore
 
-  bundle:
-    name: Bundle All APKs
-    needs: build
-    runs-on: ubuntu-latest
-    if: always()
-    steps:
-      - name: Download all APK artifacts
-        uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          path: all-apks
-          pattern: '*-apk'
-          merge-multiple: true
+  #bundle:
+    #name: Bundle All APKs
+    #needs: build
+    #runs-on: ubuntu-latest
+    #if: always()
+    #steps:
+      - #name: Download all APK artifacts
+        #uses: actions/download-artifact@v4
+        #continue-on-error: true
+        #with:
+         # path: all-apks
+         #pattern: '*-apk'
+          #merge-multiple: true
 
-      - name: Validate and prune APKs
-        id: check_apks
-        run: |
+      - #name: Validate and prune APKs
+        #id: check_apks
+        #run: |
           mkdir -p all-apks
           valid_count=0
           for apk in all-apks/*.apk; do
@@ -247,19 +247,19 @@ jobs:
             echo "has_apks=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Upload all APKs combined artifact
-        if: steps.check_apks.outputs.has_apks == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: artcraft-all-apks
-          path: all-apks/*.apk
+      - #name: Upload all APKs combined artifact
+        #if: steps.check_apks.outputs.has_apks == 'true'
+        #uses: actions/upload-artifact@v4
+        #with:
+          #name: artcraft-all-apks
+          #path: all-apks/*.apk
 
-      - name: Create Release (Manual Dispatch Only)
-        if: github.event_name == 'workflow_dispatch' && inputs.create_release && steps.check_apks.outputs.has_apks == 'true'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ inputs.release_tag || github.ref_name }}
-          files: all-apks/*.apk
-          draft: ${{ inputs.draft_release }}
-          prerelease: false
-          generate_release_notes: true
+      - #name: Create Release (Manual Dispatch Only)
+        #if: github.event_name == 'workflow_dispatch' && inputs.create_release && steps.check_apks.outputs.has_apks == 'true'
+        #uses: softprops/action-gh-release@v2
+        #with:
+          #tag_name: ${{ inputs.release_tag || github.ref_name }}
+          #files: all-apks/*.apk
+          #draft: ${{ inputs.draft_release }}
+          #prerelease: false
+          #generate_release_notes: true
