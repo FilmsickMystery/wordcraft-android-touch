@@ -1,8 +1,3 @@
-# ArtCraft Android
-
-> [!NOTE]
-> **About this project:** We are an independent group of people who love ArtCraft very much and want to make these apps available on Android. We are not affiliated with, related to, or endorsed by ArtCraft / Storytold, and all our ports are completely unofficial.
-
 ## WordCraft for Android
 
 This project is an active mobile adaptation of the desktop WordCraft editor for modern Android
@@ -38,6 +33,12 @@ Thanks to the [Storytold](https://github.com/storytold/wordcraft) developers for
 WordCraft, and to
 [MostafaXS1](https://github.com/MostafaXS1/artcraft-android) for adapting the application for
 Android.
+
+
+# ArtCraft Android
+
+> [!NOTE]
+> **About this project:** We are an independent group of people who love ArtCraft very much and want to make these apps available on Android. We are not affiliated with, related to, or endorsed by ArtCraft / Storytold, and all our ports are completely unofficial.
 
 # **The full ArtCraft PC experience, now on Android.**
 
