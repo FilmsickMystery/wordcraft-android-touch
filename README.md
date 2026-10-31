@@ -3,6 +3,42 @@
 > [!NOTE]
 > **About this project:** We are an independent group of people who love ArtCraft very much and want to make these apps available on Android. We are not affiliated with, related to, or endorsed by ArtCraft / Storytold, and all our ports are completely unofficial.
 
+## WordCraft for Android
+
+This project is an active mobile adaptation of the desktop WordCraft editor for modern Android
+phones and tablets. It builds on the latest upstream WordCraft core while adapting touch input,
+the on-screen keyboard, and other interactions for Android.
+
+### Touch and usability
+
+- **Native pinch-to-zoom:** Smooth two-finger zoom uses WordCraft's built-in gesture handling.
+- **Gboard integration:** The Android keyboard supports text entry, DPAD navigation, and editing
+  actions. Input is integrated with the editor without restarting the input connection for normal
+  cursor and selection updates.
+- **System clipboard:** Copy and paste work between WordCraft and other Android apps.
+- **Touch-friendly scrolling:** The scrollbar is widened to make it easier to use with a finger.
+- **Keyboard toggle:** An on-screen button lets you hide the keyboard and keep it hidden while
+  browsing a document.
+
+### Known issues
+
+- Starting a pinch gesture can sometimes select text in the document. This selection does not
+  delete or alter text by itself.
+- Dragging to select text in menus or other UI fields can still make the keyboard rapidly hide
+  and reopen.
+
+### Install
+
+Download the ready-to-install WordCraft APK from the project's
+[GitHub Releases](https://github.com/FilmsickMystery/wordcraft-android-touch/releases).
+
+### Thanks
+
+Thanks to the [Storytold](https://github.com/storytold/wordcraft) developers for creating
+WordCraft, and to
+[MostafaXS1](https://github.com/MostafaXS1/artcraft-android) for adapting the application for
+Android.
+
 **The full ArtCraft PC experience, now on Android.**
 
 [**Download the apps**](https://github.com/MostafaXS1/artcraft-android/releases/) · [ArtCraft website](https://getartcraft.com/) · [Explore the apps](https://getartcraft.com/apps)

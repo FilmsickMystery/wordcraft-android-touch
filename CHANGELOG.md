@@ -1,40 +1,38 @@
 # Changelog
 
-## Unreleased
+## 2026-10-31
 
-### Fixed
-- Prevented selection drags from briefly hiding the Android keyboard, correctly recognize the
-  second active touch to cancel a document drag before pinch, and surrender canvas focus on taps
-  in the unobstructed gray margin.
-- Fully removed gray-margin touch panning and its pointer-event interception for existing and
-  future source checkouts; enlarged WordCraft's touch scrollbar to 36 points with 5-point margins.
-- Disabled the Android touchscreen gesture recognizer: multi-touch events now pass through winit
-  natively so WordCraft's built-in egui pinch handling can process them.
-- Routed Gboard copy/cut text from WordCraft's active selection to Android's system clipboard while
-  preserving WordCraft's native Copy/Cut events; paste still uses `InputConnection.commitText`.
-- Bumped the launcher generator to version 67 for the clipboard bridge and scrollbar style update.
-- Routed Gboard select-all, cut, copy, paste, and DPAD navigation through WordCraft's IME event
-  bridge, including shift-selection and Android clipboard paste.
-- Made `imeShow()` idempotent while input focus is already active, so selection synchronization
-  cannot repeatedly request the keyboard.
-- Bumped the launcher generator to version 65 for the IME host changes.
-- Fixed WordCraft 0.12.0 Android build failures by inserting the touch-gesture helper at a stable
-  module-level location instead of depending on the renamed canvas mouse-handler signature.
-- Prevented non-page taps and touch-drag starts from focusing the document canvas, and made
-  touchscreen pinch zoom more responsive; gray margins do not pan the canvas.
-- Kept an already-open Android IME connection active during pointer drags so transient selection
-  frames in menus do not hide and reopen the keyboard.
-- Restored WordCraft's Mini Toolbar to its original position above the selected text and prevented
-  toolbar-layer taps from being handled as canvas clicks or stealing the canvas IME focus.
-- Kept IME output active while a focused text selection changes, avoiding repeated Gboard
-  hide/show cycles; selection updates now use `InputMethodManager.updateSelection` without an
-  input restart or keyboard show request.
-- Preserved WordCraft's committed text and cursor/selection in the Android IME host across keyboard
-  reopen, including UTF-8-to-UTF-16 offsets and fresh `EditorInfo` selection state.
-- Added a WordCraft-only keyboard toggle that hides Gboard and blocks automatic keyboard reopening
-  until the toggle is enabled again.
-- Bumped the launcher generator to version 64 so existing generated launchers receive the IME
-  state synchronization and keyboard toggle.
+### WordCraft Android
+
+- Forwarded touchscreen contacts as native multi-touch events and removed the competing synthetic
+  Android gesture recognizer. WordCraft's built-in egui handling now provides the smooth pinch
+  zoom confirmed on-device.
+- Tracked active touch IDs so a second finger is recognized as part of the same gesture; cancel
+  the pointer drag when multi-touch takes over and avoid starting document selection on recognized
+  multi-touch frames.
+- Kept an existing IME session active while a pointer or touch is held, made repeated
+  `imeShow()` requests idempotent, and synchronized selection with
+  `InputMethodManager.updateSelection()` rather than restarting input.
+- Added Gboard select-all, cut, copy, paste, and DPAD navigation support. WordCraft copy/cut
+  selections are bridged to Android's system clipboard, and paste reads from that clipboard.
+- Preserved the editor text and cursor/selection state for Gboard when the keyboard input
+  connection is recreated.
+- Added a WordCraft keyboard toggle that hides Gboard and blocks automatic reopening until
+  re-enabled.
+- Increased the touch scrollbar width to 36 points with 5-point inner and outer margins.
+- Prevented blank gray-margin taps from focusing the document canvas, while leaving interactions
+  over floating UI layers alone. Gray-margin touch panning remains disabled.
+- Kept the Mini Toolbar anchored above the selected text and guarded canvas focus against taps on
+  UI overlays.
+- Updated the generated WordCraft launcher to apply the Android clipboard bridge and touch
+  scrollbar styling (generator version 67).
+
+### Known Issues
+
+- The first touch of a pinch gesture can still occasionally select text before the second finger
+  arrives. This selection does not delete or otherwise alter the text by itself.
+- Dragging to select text in menus or other UI fields can still cause the keyboard to rapidly hide
+  and reopen.
 
 ## v37 — 2026-10-20
 
