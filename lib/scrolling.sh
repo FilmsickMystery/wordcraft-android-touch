@@ -230,7 +230,8 @@ if app == "wordcraft":
     ):
         fixed.append("crates/ui-egui/src/canvas.rs (overlay taps do not select document text)")
 
-    # A second finger arriving after the press already started a drag: drop the selection.
+    # A second finger arriving after the press already started a drag cancels that drag before
+    # the pinch is handled, so its initial pointer press cannot leave a document selection behind.
     # Runs before the drag-extension arms below.
     if fix(
         "crates/ui-egui/src/canvas.rs",
@@ -385,6 +386,13 @@ if app == "wordcraft":
         "    });\n"
         "    let touch_event = ui.input(|i| i.events.iter().any(|event| matches!(event, egui::Event::Touch { .. })));\n"
         "    let drag_focus = !touch_event && resp.drag_started() && page_tap;\n"
+        "    let blank_canvas_click = pointer_click\n"
+        "        && !page_tap\n"
+        "        && !android_pointer_over_overlay(ui);\n"
+        "    if blank_canvas_click {\n"
+        "        app.canvas.focused = false;\n"
+        "        resp.surrender_focus();\n"
+        "    }\n"
         "    let focus_click = !crate::canvas::touch_gesture_active(ui)\n"
         "        && ((pointer_click && page_tap) || drag_focus || accesskit_click);\n"
         "    if focus_click {\n"

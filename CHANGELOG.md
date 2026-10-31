@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Fixed
+- Prevented selection drags from briefly hiding the Android keyboard, correctly recognize the
+  second active touch to cancel a document drag before pinch, and surrender canvas focus on taps
+  in the unobstructed gray margin.
 - Fully removed gray-margin touch panning and its pointer-event interception for existing and
   future source checkouts; enlarged WordCraft's touch scrollbar to 36 points with 5-point margins.
 - Disabled the Android touchscreen gesture recognizer: multi-touch events now pass through winit

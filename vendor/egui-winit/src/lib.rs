@@ -124,14 +124,9 @@ pub struct State {
     /// Only one touch will be interpreted as pointer at any time.
     pointer_touch_id: Option<u64>,
 
-    /// Touch ids seen since the current gesture began, used to tell a multi-finger gesture apart
-    /// from a fresh single-finger one. A one-finger drag becomes a mouse drag (selection,
-    /// drag-to-scroll); as soon as a second finger joins, the gesture is multi-touch (two-finger
-    /// scroll, pinch) and must not drive the pointer, or the first finger would keep selecting text
-    /// underneath the scroll. This set is deliberately rebuilt from `Started` events only — never
-    /// pruned by `Ended` — because the platform backend may legitimately stop forwarding a
-    /// gesture's touches once it becomes a scroll, and relying on `Ended` to clean up would leave
-    /// the suppression stuck on and break every later gesture.
+    /// Active touch ids, used to distinguish single-finger pointer input from multi-touch. A
+    /// second finger must join the current set so egui can cancel the pointer drag and recognize
+    /// pinch; ended and cancelled contacts release the suppression for the next gesture.
     gesture_touch_ids: Vec<u64>,
 
     #[cfg(feature = "accesskit")]
@@ -906,21 +901,18 @@ impl State {
         let pixels_per_point = pixels_per_point(&self.egui_ctx, window);
 
         // Keep track of which fingers make up the current gesture. A finger we have not seen before
-        // begins a fresh gesture, so the set resets to just that finger; a finger already in the
-        // set is another finger of the gesture in progress and is added. Two or more means
-        // multi-touch. A lifted finger is dropped, so a gesture that ends can never leave the set
-        // (and the pointer suppression) stuck on. See `gesture_touch_ids` for why both a reset on
-        // `Started` and a prune on `Ended` are needed.
+        // is added to the active set. Two or more means multi-touch. A lifted finger is dropped,
+        // so a completed gesture cannot leave pointer suppression stuck on.
         match touch.phase {
             winit::event::TouchPhase::Started => {
                 if !self.gesture_touch_ids.contains(&touch.id) {
-                    self.gesture_touch_ids.clear();
+                    self.gesture_touch_ids.push(touch.id);
                 }
-                self.gesture_touch_ids.push(touch.id);
             }
-            winit::event::TouchPhase::Ended | winit::event::TouchPhase::Cancelled => {
+            winit::event::TouchPhase::Ended => {
                 self.gesture_touch_ids.retain(|id| *id != touch.id);
             }
+            winit::event::TouchPhase::Cancelled => self.gesture_touch_ids.clear(),
             winit::event::TouchPhase::Moved => {}
         }
 
@@ -1220,12 +1212,13 @@ impl State {
         self.apply_cursor(window, event_loop, cursor_icon, cursor_image.as_ref());
 
         // Selection drags can briefly omit IME output while egui changes the active selection
-        // widget. Keep an already-open Android input connection alive until the pointer lifts;
-        // the next settled frame can then hide it normally if focus really moved away.
+        // widget. Keep an already-open Android input connection alive until all pointer and touch
+        // contacts lift; the next settled frame can then hide it normally if focus really moved.
         let allow_ime = ime.is_some()
             || (cfg!(target_os = "android")
                 && self.allow_ime
-                && self.egui_ctx.input(|input| input.pointer.any_down()));
+                && (self.egui_ctx.input(|input| input.pointer.any_down())
+                    || !self.gesture_touch_ids.is_empty()));
         let is_toggling_ime = self.allow_ime != allow_ime;
         if is_toggling_ime {
             self.allow_ime = allow_ime;
