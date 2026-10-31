@@ -1,6 +1,6 @@
 ## WordCraft for Android
 
-This project is an active mobile adaptation of the desktop WordCraft editor for modern Android
+This project is a mobile adaptation of the desktop WordCraft editor for modern Android
 phones and tablets. It builds on the latest upstream WordCraft core while adapting touch input,
 the on-screen keyboard, and other interactions for Android.
 
