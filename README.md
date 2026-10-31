@@ -49,7 +49,7 @@ ArtCraft Android brings the complete functionality of the ArtCraft PC applicatio
 
 Whether you're using a phone, tablet, or an Android device with a keyboard and mouse, ArtCraft gives you the same powerful creative tools available on PC, adapted to work naturally with Android.
 
-## The Full PC Experience on Android
+# The Full PC Experience on Android
 
 ArtCraft Android is not a stripped-down mobile edition. The applications are built with the exact source code used in their PC counterparts, with Android-specific adaptations that connect them to the platform's input, storage, and system APIs.
 
