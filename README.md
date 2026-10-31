@@ -39,7 +39,7 @@ WordCraft, and to
 [MostafaXS1](https://github.com/MostafaXS1/artcraft-android) for adapting the application for
 Android.
 
-**The full ArtCraft PC experience, now on Android.**
+# **The full ArtCraft PC experience, now on Android.**
 
 [**Download the apps**](https://github.com/MostafaXS1/artcraft-android/releases/) · [ArtCraft website](https://getartcraft.com/) · [Explore the apps](https://getartcraft.com/apps)
 
