@@ -5,8 +5,8 @@
 ### Fixed
 - Fully removed gray-margin touch panning and its pointer-event interception for existing and
   future source checkouts; enlarged WordCraft's touch scrollbar to 36 points with 5-point margins.
-- Made touchscreen pinch zoom update from the same tracked pair of finger IDs and each consecutive
-  distance change, with a smaller recognition deadzone for more continuous response.
+- Disabled the Android touchscreen gesture recognizer: multi-touch events now pass through winit
+  natively so WordCraft's built-in egui pinch handling can process them.
 - Routed Gboard copy/cut text from WordCraft's active selection to Android's system clipboard while
   preserving WordCraft's native Copy/Cut events; paste still uses `InputConnection.commitText`.
 - Bumped the launcher generator to version 67 for the clipboard bridge and scrollbar style update.

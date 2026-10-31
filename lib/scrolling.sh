@@ -1,29 +1,17 @@
 #!/usr/bin/env bash
-# Two-finger scrolling — the app-side patches.
+# Android touch interaction — app-side patches.
 #
-# A phone or tablet has no wheel, so a two-finger drag is the only way to scroll. The
-# builder's vendored winit backend (see lib/build-common.sh) recognises the gesture the way
-# a browser does — a two-finger slide scrolls, a two-finger pinch zooms — and takes it over
-# from the touch path: the fingers' touches are withheld, and the first finger's touch is
-# cancelled so the gesture cannot start a text selection.
+# The Android backend forwards touchscreen contacts as native touch events. egui owns pinch
+# recognition; these patches keep multi-touch from turning into text selection or canvas focus.
 #
-# Two things are left for the app:
-#
-#  * the press that arrives with the *first* finger must not start a selection: the canvas
-#    has to know a gesture is in progress, which it learns from the touch the backend
-#    cancelled;
-#  * the momentum. The web build leaves the flick's coast to the browser (Chromium
-#    synthesises it and sends it as more wheel events), and so do macOS and Windows; Android
-#    sends no momentum of its own for a two-finger pan, so the app has to make the coast
-#    itself, exactly as it does on Linux.
+# The app also supplies momentum for smooth scroll input on Android, which does not provide
+# its own coast for the app's wheel-based scrolling.
 #
 # Every edit is guarded and idempotent: it applies only while the original text is still
 # present, so it no-ops once upstream handles it, and is re-applied on a fresh checkout.
 #
-# The scroll synthesis itself (the vendored winit/egui-winit backends) lives in
-# lib/build-common.sh and runs regardless of this script; this script adds the app side.
-#
-# To test WITHOUT the patches, comment out the call to this script in lib/build-common.sh.
+# To test without the app-side patches, comment out the call to this script in
+# lib/build-common.sh.
 #
 # Usage: scrolling.sh <source-dir> <app> <title>
 set -euo pipefail
@@ -170,9 +158,8 @@ if app == "wordcraft":
         canvas_path.write_text(canvas_text)
         fixed.append("crates/ui-egui/src/canvas.rs (removed initial focus surrender)")
 
-    # Android reports two-finger pans as point-wheel events and pinches as zoom events after
-    # taking their touches over. Keep treating those frames as gestures, not clicks or focus
-    # changes; the initial cancelled touch covers the hand-off frame.
+    # egui recognizes native multi-touch from the forwarded touch events. Keep those frames
+    # from becoming canvas clicks, focus changes, or text-selection drags.
     guard = (
         "/// A two-finger gesture (scroll or pinch) is in progress: a touch press during it is part\n"
         "/// of that gesture, not a click, and any text-selection drag it began must be dropped.\n"
@@ -181,6 +168,7 @@ if app == "wordcraft":
         "        i.events\n"
         "            .iter()\n"
         "            .any(|e| matches!(e, egui::Event::Touch { phase: egui::TouchPhase::Cancel, .. }))\n"
+        "            || (cfg!(target_os = \"android\") && i.multi_touch().is_some())\n"
         "            || (cfg!(target_os = \"android\") && i.events.iter().any(|e| matches!(e,\n"
         "                egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Point, .. }\n"
         "                    | egui::Event::Zoom(_)\n"
@@ -203,7 +191,7 @@ if app == "wordcraft":
     ):
         fixed.append("crates/ui-egui/src/canvas.rs (touch gestures start no selection)")
 
-    # Do not begin a selection on a press that is part of a multitouch gesture.
+    # Do not begin or continue a selection during a native multi-touch gesture.
     if fix(
         "crates/ui-egui/src/canvas.rs",
         "    let pressed = ui.input(|i| i.pointer.primary_pressed()) && resp.contains_pointer() && !over_balloon(app, p);\n",
@@ -242,8 +230,8 @@ if app == "wordcraft":
     ):
         fixed.append("crates/ui-egui/src/canvas.rs (overlay taps do not select document text)")
 
-    # A second finger arriving after the press already started a drag: drop it, so the scroll
-    # never carries a selection along. Runs before the drag-extension arms below.
+    # A second finger arriving after the press already started a drag: drop the selection.
+    # Runs before the drag-extension arms below.
     if fix(
         "crates/ui-egui/src/canvas.rs",
         "    } else if app.canvas.dragging\n"
@@ -416,9 +404,9 @@ if app == "wordcraft":
     # there as line deltas) and the web (Chromium synthesises the coast and sends it as more
     # wheel events, which is why the web build must not make one as well).
     #
-    # Android sends no momentum of its own for a two-finger pan — the touchscreen's OS layer
-    # has no inertia — so the app has to make the coast, exactly as it does on Linux. The
-    # earlier builder patch excluded Android, which left a flick with no coast at all.
+    # Android sends no momentum of its own for smooth scroll input, so the app has to make
+    # the coast, exactly as it does on Linux. The earlier builder patch excluded Android,
+    # which left a flick with no coast at all.
     #
     # A mouse's notches are line deltas and never reach the momentum, so they cannot coast:
     # only the smooth (point) deltas of a pan or a trackpad do.

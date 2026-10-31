@@ -212,10 +212,9 @@ Guarded fixes applied only if broken text present and not already fixed:
 ### 8.2 App-Side Patches (Shell Scripts)
 
 **`lib/scrolling.sh`** - Applied to all apps
-- Patches app source for two-finger scrolling/momentum
-- Works with vendored winit/egui-winit that recognize gestures
-- Prevents selection on first finger
-- Adds momentum (Android sends no momentum natively)
+- Patches app source to guard native multi-touch from text selection and canvas focus
+- Android touchscreen contacts pass through winit as native touches; egui handles pinch recognition
+- Adds momentum for smooth scroll input (Android sends no momentum natively)
 
 **`lib/subcraft.sh`** - Applied only to SubCraft
 - Adds `files::deliver_android(purpose, paths)` to SubCraft
@@ -938,17 +937,10 @@ Location: `files/media/`
 - Device classification detects trackpad vs mouse
 
 ### 24.3 Touch
-- Two-finger slide scrolls document
-- Two-finger pinch zooms
+- Android touchscreen contacts are forwarded as native touch events; WordCraft's egui canvas handles pinch zoom
 - The gray margins around pages do not pan the canvas
 - WordCraft Android scrollbars are widened to 36 points, with 5-point inner and outer margins, for touch
-- Gesture recognition with deadzone:
-  - Slide > finger width → scroll
-  - Pinch distance change → zoom
-  - Otherwise ignored (prevents accidental zoom during scroll)
-- Flick coasting
-- Never starts text selection
-- Patched scrolling prevents selection on first finger
+- Native multi-touch is guarded against creating a text-selection drag or taking canvas focus
 
 ### 24.4 App-Side Patches
 `lib/scrolling.sh` applied to all apps for enhanced gesture handling.

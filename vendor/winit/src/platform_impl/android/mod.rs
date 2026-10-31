@@ -54,25 +54,6 @@ fn min_timeout(a: Option<Duration>, b: Option<Duration>) -> Option<Duration> {
 /// the pixels the content moves by.
 const POINTS_PER_AXIS: f64 = 40.0;
 
-/// How far the two fingers' midpoint must move (physical pixels) before a two-finger gesture
-/// counts as a pan (a scroll) rather than staying undecided.
-const PAN_DEADZONE_PX: f64 = 12.0;
-
-/// How far the two fingers' spread must change (physical pixels) before a two-finger gesture can
-/// be a pinch (a zoom) rather than a pan.
-const PINCH_DEADZONE_PX: f64 = 3.0;
-
-/// How much more the two fingers' spread must change than their midpoint moves for a pinch to win
-/// the gesture. A pan holds the fingers a fixed distance apart while the pair slides; a pinch
-/// mostly changes the distance. Well above 1, so a slightly uneven drag still scrolls.
-const PINCH_SPREAD_RATIO: f64 = 1.2;
-
-/// Amplify small per-frame spread changes so touchscreen zoom responds like a trackpad pinch.
-const PINCH_ZOOM_SENSITIVITY: f64 = 1.5;
-
-/// How much faster a two-finger pan scrolls than the fingers move.
-const PAN_SPEED: f64 = 1.5;
-
 fn pointer_position(pointer: &android_activity::input::Pointer<'_>) -> PhysicalPosition<f64> {
     PhysicalPosition {
         x: pointer.x() as f64,
@@ -86,34 +67,6 @@ fn pointer_spread(motion_event: &android_activity::input::MotionEvent<'_>) -> Op
     let first = pointers.next()?;
     let second = pointers.next()?;
     Some(((first.x - second.x).powi(2) + (first.y - second.y).powi(2)).sqrt())
-}
-
-/// Every finger currently reported by `motion_event`, as (id, position).
-fn collect_touch_points(
-    motion_event: &android_activity::input::MotionEvent<'_>,
-) -> Vec<(i32, PhysicalPosition<f64>)> {
-    motion_event
-        .pointers()
-        .map(|pointer| (pointer.pointer_id(), pointer_position(&pointer)))
-        .collect()
-}
-
-/// The fingers still on the glass after `motion_event`: an `Up` event carries the finger that is
-/// leaving as well, and that one is gone.
-fn remaining_touch_points(
-    motion_event: &android_activity::input::MotionEvent<'_>,
-) -> Vec<(i32, PhysicalPosition<f64>)> {
-    let mut points = collect_touch_points(motion_event);
-    if matches!(
-        motion_event.action(),
-        MotionAction::Up | MotionAction::PointerUp
-    ) {
-        let leaving = motion_event
-            .pointer_at_index(motion_event.pointer_index())
-            .pointer_id();
-        points.retain(|(id, _)| *id != leaving);
-    }
-    points
 }
 
 fn android_mouse_button(button: android_activity::input::Button) -> event::MouseButton {
@@ -240,19 +193,6 @@ pub struct EventLoop<T: 'static> {
     cause: StartCause,
     ignore_volume_keys: bool,
     combining_accent: Option<char>,
-    /// Active touch points (finger id -> position in physical pixels), for the two-finger
-    /// gesture recognition below. Empty when no fingers are down.
-    touch_points: Vec<(i32, PhysicalPosition<f64>)>,
-    /// What the current multi-finger gesture has been recognised as.
-    gesture: Gesture,
-    /// The fingers' spread and midpoint where the gesture started: the deadzone is measured
-    /// against them.
-    gesture_origin: Option<(f64, PhysicalPosition<f64>)>,
-    /// The two stable finger IDs and their last distance, updated on every two-finger move.
-    pinch_tracking: Option<PinchTracker>,
-    /// The finger that was already on the glass when a second one joined it: the one whose
-    /// touch has to be cancelled when the gesture takes over.
-    gesture_pointer: Option<(i32, PhysicalPosition<f64>)>,
     /// Where a hardware touchpad's gesture was when its last event came: the gesture is
     /// reported as a pointer that walks across the screen, and the distance it walked is
     /// the scroll.
@@ -260,23 +200,6 @@ pub struct EventLoop<T: 'static> {
     /// How far apart a hardware touchpad's pinch fingers were when its last event came:
     /// the pinch is reported as two pointers that move apart or together.
     pad_spread: Option<f64>,
-}
-
-/// What a multi-finger gesture has been recognised as.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Gesture {
-    /// Not decided yet: the fingers are still inside the deadzone.
-    Undecided,
-    /// A two-finger pan: reported as scrolling.
-    Pan,
-    /// A pinch: reported as a zoom.
-    Pinch,
-}
-
-#[derive(Clone, Copy)]
-struct PinchTracker {
-    ids: (i32, i32),
-    prev_distance: f64,
 }
 
 /// What a hardware touchpad is doing.
@@ -288,17 +211,6 @@ enum PadGesture {
     Scroll,
     /// A two-finger pinch: reported as a zoom.
     Pinch,
-}
-
-/// What the backend made of a multi-finger gesture.
-enum GestureStep {
-    /// Not a two-finger gesture, or still inside the deadzone: the fingers are reported as
-    /// touches.
-    None,
-    /// A pan: the two fingers' midpoint moved by this much (physical pixels).
-    Pan(PhysicalPosition<f64>),
-    /// A pinch: the fingers spread (or closed) by this factor since the last step.
-    Pinch(f64),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -356,11 +268,6 @@ impl<T: 'static> EventLoop<T> {
             cause: StartCause::Init,
             ignore_volume_keys: attributes.ignore_volume_keys,
             combining_accent: None,
-            touch_points: Vec::new(),
-            gesture: Gesture::Undecided,
-            gesture_origin: None,
-            pinch_tracking: None,
-            gesture_pointer: None,
             pad_position: None,
             pad_spread: None,
         })
@@ -537,208 +444,6 @@ impl<T: 'static> EventLoop<T> {
         self.pending_redraw = pending_redraw;
     }
 
-    /// Recognise a multi-finger gesture and report it the way a trackpad does.
-    ///
-    /// A phone or tablet has no wheel, so a two-finger drag is the platform's scroll gesture (as
-    /// on a trackpad). Upstream winit forwards each finger as a separate `Touch` event and
-    /// nothing turns the gesture into scrolling, so a two-finger drag did nothing.
-    ///
-    /// Chromium makes the same decision for a trackpad, and the WebView build of WordCraft
-    /// inherits it: a two-finger slide is a scroll (a `DOM_DELTA_PIXEL` wheel event, applied 1:1)
-    /// and a two-finger pinch is a zoom (a ctrl-wheel event, which `eframe` turns into
-    /// `egui::Event::Zoom`). Android hands us the raw finger positions instead, so the backend
-    /// has to make that call — and it has to make it *once*: a gesture that flips from scroll to
-    /// zoom halfway through leaves the document half zoomed, and a gesture egui reads as a pinch
-    /// (it computes a zoom from the distance between two fingers) turns every scroll into a slow
-    /// zoom.
-    ///
-    /// So the gesture is decided once, inside a deadzone, and then sticks until the fingers lift:
-    /// a pan that moves the fingers' midpoint further than [`PAN_DEADZONE_PX`] scrolls, a gesture
-    /// that changes their spread further than [`PINCH_DEADZONE_PX`] (and much further than it
-    /// moves the midpoint) zooms, and anything in between does nothing at all.
-    fn recognise_touch_gesture(
-        &mut self,
-        motion_event: &android_activity::input::MotionEvent<'_>,
-    ) -> GestureStep {
-        match motion_event.action() {
-            MotionAction::Down
-            | MotionAction::PointerDown
-            | MotionAction::Up
-            | MotionAction::PointerUp
-            | MotionAction::Cancel => {
-                // A finger went down or up: the gesture starts over. Rebuild the set of fingers
-                // from the event (a `Down` carries every active pointer; an `Up` carries the
-                // finger that is leaving as well, and that one is gone).
-                let previous = std::mem::replace(
-                    &mut self.touch_points,
-                    remaining_touch_points(motion_event),
-                );
-                if self.touch_points.len() < 2 {
-                    self.pinch_tracking = None;
-                } else if self.touch_points.len() == 2 {
-                    let ids = (self.touch_points[0].0, self.touch_points[1].0);
-                    let same_pair = self.pinch_tracking.is_some_and(|tracking| {
-                        (tracking.ids.0 == ids.0 && tracking.ids.1 == ids.1)
-                            || (tracking.ids.0 == ids.1 && tracking.ids.1 == ids.0)
-                    });
-                    if !same_pair {
-                        self.pinch_tracking = self.touch_spread().map(|distance| PinchTracker {
-                            ids,
-                            prev_distance: distance,
-                        });
-                    }
-                }
-                self.gesture = Gesture::Undecided;
-                self.gesture_origin = None;
-                // The finger that was already on the glass when this one joined: the one whose
-                // touch has to be cancelled when the gesture takes over.
-                self.gesture_pointer = previous.first().copied();
-                GestureStep::None
-            }
-            MotionAction::Move => {
-                // The number of fingers this event carries, and the number we were tracking. A
-                // change in either (a third finger landing, one of two lifting) ends the gesture.
-                if self.touch_points.len() != 2 || motion_event.pointer_count() != 2 {
-                    // Keep the tracked positions current even for 1 or 3+ fingers (we just don't
-                    // scroll for those), so a later two-finger move has a correct previous point.
-                    self.sync_touch_points(motion_event);
-                    self.gesture = Gesture::Undecided;
-                    self.gesture_origin = None;
-                    if self.touch_points.len() < 2 {
-                        self.pinch_tracking = None;
-                    }
-                    return GestureStep::None;
-                }
-                let Some(midpoint) = self.touch_midpoint() else {
-                    return GestureStep::None;
-                };
-                let Some(spread) = self.touch_spread() else {
-                    return GestureStep::None;
-                };
-                // Update the tracked positions first, so the next event measures against these.
-                self.sync_touch_points(motion_event);
-                let Some(new_midpoint) = self.touch_midpoint() else {
-                    return GestureStep::None;
-                };
-                let Some(new_spread) = self.touch_spread() else {
-                    return GestureStep::None;
-                };
-                let ids = (self.touch_points[0].0, self.touch_points[1].0);
-                let pinch_factor = match self.pinch_tracking.as_mut() {
-                    Some(tracking)
-                        if (tracking.ids.0 == ids.0 && tracking.ids.1 == ids.1)
-                            || (tracking.ids.0 == ids.1 && tracking.ids.1 == ids.0) =>
-                    {
-                        let previous = tracking.prev_distance;
-                        tracking.prev_distance = new_spread;
-                        if previous.is_finite() && previous > 0.0 && new_spread.is_finite() {
-                            let factor = new_spread / previous;
-                            (factor.is_finite() && factor > 0.0).then_some(factor)
-                        } else {
-                            None
-                        }
-                    }
-                    _ => {
-                        self.pinch_tracking = Some(PinchTracker {
-                            ids,
-                            prev_distance: new_spread,
-                        });
-                        None
-                    }
-                };
-
-                // The deadzone is measured from where the gesture started.
-                let (origin_spread, origin_midpoint) =
-                    *self.gesture_origin.get_or_insert((spread, midpoint));
-                let spread_change = (new_spread - origin_spread).abs();
-                let moved = ((new_midpoint.x - origin_midpoint.x).powi(2)
-                    + (new_midpoint.y - origin_midpoint.y).powi(2))
-                .sqrt();
-
-                match self.gesture {
-                    Gesture::Undecided => {
-                        // A pinch changes the spread much more than the midpoint moves; that is a
-                        // zoom, not a scroll. Until one of the two is clearly bigger, the
-                        // gesture stays undecided and nothing is reported: that is the
-                        // deadzone between scrolling and zooming.
-                        if spread_change > PINCH_DEADZONE_PX
-                            && spread_change > PINCH_SPREAD_RATIO * moved
-                        {
-                            self.gesture = Gesture::Pinch;
-                        } else if moved > PAN_DEADZONE_PX {
-                            self.gesture = Gesture::Pan;
-                        } else {
-                            return GestureStep::None;
-                        }
-                    }
-                    Gesture::Pan => {
-                        // A pan that turns into a clear pinch hands over to the zoom, but only
-                        // once the spread has changed twice as much as the deadzone: a gesture
-                        // that has already started scrolling does not flip on a twitch.
-                        if spread_change > 2.0 * PINCH_DEADZONE_PX {
-                            self.gesture = Gesture::Pinch;
-                        }
-                    }
-                    Gesture::Pinch => {}
-                }
-
-                match self.gesture {
-                    Gesture::Pinch => {
-                        pinch_factor.map_or(GestureStep::None, GestureStep::Pinch)
-                    }
-                    Gesture::Pan => {
-                        // The fingers' midpoint moved: that is the scroll. The delta is signed
-                        // the way a wheel event is (positive = the content moves down/right) and
-                        // the content follows the fingers, so it is their own motion.
-                        GestureStep::Pan(PhysicalPosition {
-                            x: (new_midpoint.x - midpoint.x) * PAN_SPEED,
-                            y: (new_midpoint.y - midpoint.y) * PAN_SPEED,
-                        })
-                    }
-                    Gesture::Undecided => GestureStep::None,
-                }
-            }
-            _ => GestureStep::None,
-        }
-    }
-
-    /// Update the tracked positions of the fingers in `motion_event`, keeping the set in step with
-    /// the glass (adding fingers that appeared, dropping the ones that left).
-    fn sync_touch_points(&mut self, motion_event: &android_activity::input::MotionEvent<'_>) {
-        let seen: Vec<(i32, PhysicalPosition<f64>)> = motion_event
-            .pointers()
-            .map(|pointer| {
-                (
-                    pointer.pointer_id(),
-                    PhysicalPosition {
-                        x: pointer.x() as f64,
-                        y: pointer.y() as f64,
-                    },
-                )
-            })
-            .collect();
-        self.touch_points = seen;
-    }
-
-    /// The midpoint of exactly two tracked fingers, if both are known.
-    fn touch_midpoint(&self) -> Option<PhysicalPosition<f64>> {
-        let [(_, a), (_, b)] = self.touch_points.as_slice() else {
-            return None;
-        };
-        Some(PhysicalPosition {
-            x: (a.x + b.x) / 2.0,
-            y: (a.y + b.y) / 2.0,
-        })
-    }
-
-    /// The distance between exactly two tracked fingers, if both are known.
-    fn touch_spread(&self) -> Option<f64> {
-        let [(_, a), (_, b)] = self.touch_points.as_slice() else {
-            return None;
-        };
-        Some(((a.x - b.x).powi(2) + (a.y - b.y).powi(2)).sqrt())
-    }
-
     fn handle_input_event<F>(
         &mut self,
         android_app: &AndroidApp,
@@ -795,12 +500,16 @@ impl<T: 'static> EventLoop<T> {
                 // finger on the glass (it starts at the cursor and is moved by the
                 // gesture), so the event is a scroll or a zoom and never a press, a drag
                 // or a cursor move.
-                let pad_gesture = match motion_event.classification() {
-                    Classification::TwoFingerSwipe | Classification::MultiFingerSwipe => {
-                        PadGesture::Scroll
+                let pad_gesture = if touchpad {
+                    match motion_event.classification() {
+                        Classification::TwoFingerSwipe | Classification::MultiFingerSwipe => {
+                            PadGesture::Scroll
+                        }
+                        Classification::Pinch => PadGesture::Pinch,
+                        _ => PadGesture::None,
                     }
-                    Classification::Pinch => PadGesture::Pinch,
-                    _ => PadGesture::None,
+                } else {
+                    PadGesture::None
                 };
                 if pad_gesture != PadGesture::None {
                     let position = motion_event
@@ -1104,82 +813,15 @@ impl<T: 'static> EventLoop<T> {
                             }
                         }
                     }
-                    // Fingers and styluses (and any device we don't classify as a pointer):
-                    // the upstream touch path, plus the two-finger gesture recognition
-                    // (`recognise_touch_gesture`). A two-finger pan emits `MouseWheel` and a
-                    // pinch emits `PinchGesture`, the same two things a trackpad's wheel and
-                    // pinch turn into in a browser; every other gesture falls through to the
-                    // touch path unchanged, so single-finger taps and drags keep working
-                    // exactly as before.
+                    // Forward touchscreen and stylus motion events as native touches, including
+                    // every pointer in a multi-touch gesture. This keeps pinch recognition in
+                    // the application instead of synthesizing platform gesture events here.
                     MotionAction::Down
                     | MotionAction::PointerDown
                     | MotionAction::Up
                     | MotionAction::PointerUp
                     | MotionAction::Move
                     | MotionAction::Cancel => {
-                        match self.recognise_touch_gesture(motion_event) {
-                            GestureStep::Pan(delta) => {
-                                trace!("Two-finger scroll {device_id:?} {delta:?}");
-                                callback(
-                                    event::Event::WindowEvent {
-                                        window_id,
-                                        event: event::WindowEvent::MouseWheel {
-                                            device_id,
-                                            delta: event::MouseScrollDelta::PixelDelta(delta),
-                                            phase: event::TouchPhase::Moved,
-                                        },
-                                    },
-                                    self.window_target(),
-                                );
-                                return input_status;
-                            }
-                            GestureStep::Pinch(factor) => {
-                                trace!("Two-finger pinch {device_id:?} {factor:?}");
-                                callback(
-                                    event::Event::WindowEvent {
-                                        window_id,
-                                        event: event::WindowEvent::PinchGesture {
-                                            device_id,
-                                            // The log of the factor: `egui` turns it back into
-                                            // the factor itself.
-                                            delta: factor.ln() * PINCH_ZOOM_SENSITIVITY,
-                                            phase: event::TouchPhase::Moved,
-                                        },
-                                    },
-                                    self.window_target(),
-                                );
-                                return input_status;
-                            }
-                            GestureStep::None => {}
-                        }
-                        // Two or more fingers on the glass: the gesture belongs to the backend
-                        // (a scroll or a zoom), so the fingers are not reported as touches —
-                        // egui would read them as a drag, or as a pinch of its own.
-                        if self.touch_points.len() >= 2 {
-                            // A second finger just landed: the first finger's touch, which egui
-                            // took for a pointer press, is cancelled, so the gesture does not
-                            // start a text selection. The finger is still on the glass, so the
-                            // pointer keeps its place: the canvas only takes the scroll while
-                            // the pointer is over it.
-                            if motion_event.action() == MotionAction::PointerDown {
-                                if let Some((id, location)) = self.gesture_pointer.take() {
-                                    callback(
-                                        event::Event::WindowEvent {
-                                            window_id,
-                                            event: event::WindowEvent::Touch(event::Touch {
-                                                device_id,
-                                                phase: event::TouchPhase::Cancelled,
-                                                location,
-                                                id: id as u64,
-                                                force: None,
-                                            }),
-                                        },
-                                        self.window_target(),
-                                    );
-                                }
-                            }
-                            return input_status;
-                        }
                         let phase = match motion_event.action() {
                             MotionAction::Down | MotionAction::PointerDown => {
                                 Some(event::TouchPhase::Started)
