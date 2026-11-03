@@ -388,7 +388,7 @@ recent_list = r'''fn open_list(app: &mut WordApp, ui: &mut Ui) {
             ui.painter().line_segment([pos2(c.x - 2.0, c.y - 4.0), pos2(c.x - 2.0, c.y + 5.0)], Stroke::new(1.2, ink));
             ui.painter().line_segment([pos2(c.x + 2.0, c.y - 4.0), pos2(c.x + 2.0, c.y + 5.0)], Stroke::new(1.2, ink));
             if delete.on_hover_text(tl!("Delete this file")).clicked() {
-                request_recent_delete(app, ui.ctx(), p);
+                request_recent_delete(ui.ctx(), p);
             }
         }
     }
@@ -398,7 +398,7 @@ fn delete_prompt_id() -> egui::Id {
     egui::Id::unique("android_recent_delete_prompt")
 }
 
-fn request_recent_delete(app: &mut WordApp, ctx: &egui::Context, path: &str) {
+fn request_recent_delete(ctx: &egui::Context, path: &str) {
     ctx.data_mut(|data| data.insert_temp(delete_prompt_id(), path.to_owned()));
 }
 
@@ -427,7 +427,7 @@ fn delete_recent(app: &mut WordApp, ctx: &egui::Context, path: &str) {
 fn show_delete_prompt(app: &mut WordApp, ctx: &egui::Context) {
     let Some(path) = ctx.data(|data| data.get_temp::<String>(delete_prompt_id())) else { return };
     let mut open = true;
-    let width = (ctx.screen_rect().width() - 32.0).clamp(240.0, 420.0);
+    let width = (ctx.content_rect().width() - 32.0).clamp(240.0, 420.0);
     let mut hide = false;
     let mut erase = false;
     let mut cancel = false;
@@ -483,6 +483,15 @@ if legacy_helper_start != -1 and legacy_helper_end != -1:
         + backstage_text[legacy_helper_end:]
     )
     backstage_path.write_text(backstage_text)
+
+backstage_text = backstage_path.read_text()
+backstage_text = backstage_text.replace("request_recent_delete(app, ui.ctx(), p);", "request_recent_delete(ui.ctx(), p);")
+backstage_text = backstage_text.replace(
+    "fn request_recent_delete(app: &mut WordApp, ctx: &egui::Context, path: &str)",
+    "fn request_recent_delete(ctx: &egui::Context, path: &str)",
+)
+backstage_text = backstage_text.replace("ctx.screen_rect()", "ctx.content_rect()")
+backstage_path.write_text(backstage_text)
 
 if changes:
     print(f"  Applied WordCraft mobile UI changes to {title}: {', '.join(changes)}")

@@ -200,6 +200,16 @@ jobs:
           path: output/*.apk
           if-no-files-found: error
 
+      - name: Create Release (Manual Dispatch Only)
+        if: github.event_name == 'workflow_dispatch' && inputs.create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag || github.ref_name }}
+          files: output/*.apk
+          draft: ${{ inputs.draft_release }}
+          prerelease: false
+          generate_release_notes: true
+
       - name: Upload build log on failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -207,59 +217,3 @@ jobs:
           name: ${{ matrix.app }}-build-log
           path: logs/
           if-no-files-found: ignore
-
-  bundle:
-    name: Bundle All APKs
-    needs: build
-    runs-on: ubuntu-latest
-    if: always()
-    steps:
-      - name: Download all APK artifacts
-        uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          path: all-apks
-          pattern: '*-apk'
-          merge-multiple: true
-
-      - name: Validate and prune APKs
-        id: check_apks
-        run: |
-          mkdir -p all-apks
-          valid_count=0
-          for apk in all-apks/*.apk; do
-            [ -f "$apk" ] || continue
-            size=$(stat -c%s "$apk" 2>/dev/null || echo 0)
-            if [ "$size" -lt 1000000 ] || ! unzip -tq "$apk" >/dev/null 2>&1; then
-              echo "WARNING: Removing corrupted or incomplete APK: $apk ($size bytes)"
-              rm -f "$apk"
-            else
-              valid_count=$((valid_count + 1))
-              echo "Valid APK: $apk ($(( size / 1048576 )) MB)"
-            fi
-          done
-
-          if [ "$valid_count" -gt 0 ]; then
-            echo "Found $valid_count valid APKs to bundle."
-            echo "has_apks=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "No valid APKs found to bundle."
-            echo "has_apks=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Upload all APKs combined artifact
-        if: steps.check_apks.outputs.has_apks == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: artcraft-all-apks
-          path: all-apks/*.apk
-
-      - name: Create Release (Manual Dispatch Only)
-        if: github.event_name == 'workflow_dispatch' && inputs.create_release && steps.check_apks.outputs.has_apks == 'true'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ inputs.release_tag || github.ref_name }}
-          files: all-apks/*.apk
-          draft: ${{ inputs.draft_release }}
-          prerelease: false
-          generate_release_notes: true
