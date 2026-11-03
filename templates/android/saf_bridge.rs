@@ -330,6 +330,32 @@ mod saf {
                 .map_err(|e| e.to_string())
         }
 
+        /// Delete a staged document and, when it came from SAF, delete its original URI as well.
+        pub fn delete_document(&self, path: &str) -> Result<(), String> {
+            let result = self.vm.attach_current_thread(|env| -> jni::errors::Result<String> {
+                let activity_raw = self.app.activity_as_ptr() as jni::sys::jobject;
+                // SAFETY: AndroidApp retains this global Activity reference; as_cast_raw borrows it.
+                let activity = unsafe { env.as_cast_raw::<JObject>(&activity_raw)? };
+                let path = env.new_string(path)?;
+                let path_obj = JObject::from(path);
+                let value = env
+                    .call_method(
+                        &*activity,
+                        jni_str!("safDelete"),
+                        jni_sig!("(Ljava/lang/String;)Ljava/lang/String;"),
+                        &[JValue::Object(&path_obj)],
+                    )?
+                    .l()?;
+                let value = JString::cast_local(env, value)?;
+                value.try_to_string(env)
+            });
+            match result {
+                Ok(status) if status == "OK" => Ok(()),
+                Ok(status) => Err(status.strip_prefix("ERROR:").unwrap_or(&status).trim().to_owned()),
+                Err(error) => Err(format!("Could not delete the Android document: {error}")),
+            }
+        }
+
         /// Drain every picker answer queued so far, as raw JSON strings (bounded, so a runaway
         /// picker cannot spin this loop forever).
         pub fn drain(&self) -> Result<Vec<String>, String> {

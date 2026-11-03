@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-11-03
+
+### WordCraft Android — upstream 0.15.0
+
+- Added a trash action beside each Recent document. The dialog offers separate actions to remove
+  the entry from Recents without touching the file, permanently erase the file from the device,
+  or cancel. On Android, erasing removes the SAF original when available, then clears its staged
+  copy and Recent entry. The currently open document cannot be erased.
+- Added a collapsible File sidebar with a hamburger toggle. It defaults to icon-only on narrow
+  screens and the content area adjusts to the selected sidebar width.
+- Made the Home template gallery and template captions wrap on narrow screens. Options
+  navigation now wraps above its contents in portrait layouts, and settings fields use available
+  width rather than fixed desktop widths.
+- Bumped the generated launcher version to 68 so existing WordCraft launchers are regenerated
+  with the Android deletion callback.
+
+### Known Issues
+
+- The first touch of a pinch gesture can still occasionally select text before the second finger
+  arrives. This selection does not delete or otherwise alter the text by itself.
+- Dragging to select text in menus or other UI fields can still cause the keyboard to rapidly hide
+  and reopen.
+
 ## 2026-10-31
 
 ### WordCraft Android

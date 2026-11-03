@@ -494,3 +494,8 @@ if app == "wordcraft":
 if fixed:
     print(f"  Added two-finger-scroll patches to {title}: {', '.join(fixed)}")
 PY
+
+if [[ "$APP" == "wordcraft" ]]; then
+    SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+    python3 "$SCRIPT_DIR/wordcraft_mobile_ui.py" "$SRC" "$TITLE"
+fi

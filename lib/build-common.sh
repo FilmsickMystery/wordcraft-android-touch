@@ -610,7 +610,7 @@ marker = android_dir / ".artcraft-android-builder-generated"
 # Bump this whenever the generated launcher template changes so stale wrappers (which live in the
 # source checkout and would otherwise be preserved forever) are regenerated automatically instead
 # of failing against a newer app API.
-GENERATOR_VERSION = "67"
+GENERATOR_VERSION = "68"
 
 # A complete adapter supplied by the user wins over auto-detection. This folder is maintained
 # inside the builder, while its contents are copied into this source checkout.
@@ -1528,8 +1528,10 @@ fn saf_next_id(state: &SafState) -> u64 {
 fn saf_services(bridge: saf::Bridge, state: Arc<SafState>, inbox: SafInbox) -> Services {
     let print_bridge = bridge.clone_ref();
     let dialog_bridge = bridge.clone_ref();
+    let delete_bridge = bridge.clone_ref();
     let dialog_state = Arc::clone(&state);
     Services {
+        delete_file: Some(Box::new(move |path: &str| delete_bridge.delete_document(path))),
         // Open / Save As / Export go through `ask_file`, which prefers this asynchronous dialog
         // (see `saf_file_dialog`): the pick runs off the frame thread, so the event loop keeps
         // pumping Android's lifecycle and the renderer swaps its surface safely around the picker.

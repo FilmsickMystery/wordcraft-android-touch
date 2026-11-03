@@ -1325,6 +1325,47 @@ public final class __CLASS__ extends GameActivity {
         }
     }
 
+    /** Delete the selected original through SAF, then remove its private staged copy. */
+    public String safDelete(String path) {
+        if (path == null || path.trim().isEmpty()) {
+            return "ERROR: No document path was provided";
+        }
+        try {
+            SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+            String uriText = prefs.getString("uri:" + path, null);
+            if (uriText == null) {
+                uriText = uriForSibling(path);
+            }
+            if (uriText != null) {
+                Uri uri = Uri.parse(uriText);
+                if (!DocumentsContract.deleteDocument(getContentResolver(), uri)) {
+                    return "ERROR: The Android document provider did not delete the selected file";
+                }
+                SharedPreferences.Editor editor = prefs.edit();
+                for (Map.Entry<String, ?> entry : prefs.getAll().entrySet()) {
+                    if (entry.getKey().startsWith("uri:") && uriText.equals(entry.getValue())) {
+                        editor.remove(entry.getKey());
+                        File staged = new File(entry.getKey().substring("uri:".length()));
+                        if (staged.exists() && !staged.delete()) {
+                            Log.w(TAG, "Could not remove a staged copy after deleting its SAF original: " + staged);
+                        }
+                    }
+                }
+                editor.apply();
+                return "OK";
+            }
+
+            File file = new File(path);
+            if (!file.isFile()) {
+                return "ERROR: The selected file no longer exists";
+            }
+            return file.delete() ? "OK" : "ERROR: Android could not delete the selected file";
+        } catch (Exception error) {
+            Log.e(TAG, "Could not delete the selected document", error);
+            return "ERROR: Could not delete the selected document: " + error.getMessage();
+        }
+    }
+
     /** The staged path's stem, ignoring any extension: {@code …/media/Book.xlsx} → {@code …/media/Book}. */
     private static String stagedStem(String path) {
         File file = new File(path);

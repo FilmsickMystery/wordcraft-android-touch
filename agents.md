@@ -116,7 +116,7 @@ The system uses a hybrid approach:
 BUILDER_VERSION="0.2.0"
 UPDATE_API_URL="https://api.github.com/repos/MostafaXS1/artcraft-android/releases/latest"
 UPDATE_PAGE_URL="https://github.com/MostafaXS1/artcraft-android/releases/latest"
-GENERATOR_VERSION="67"  # Bumped when generated launcher template changes
+GENERATOR_VERSION="68"  # Bumped when generated launcher template changes
 ```
 
 **Repository mappings:**
@@ -259,7 +259,7 @@ All other apps use the inline Python generator in `lib/build-common.sh` (startin
 
 ### 10.1 Generator Constants and Flow
 ```python
-GENERATOR_VERSION = "67"
+GENERATOR_VERSION = "68"
 # Marker file: .artcraft-android-builder-generated contains version
 ```
 
@@ -457,6 +457,7 @@ From app semver (ndk-build2 compatible).
 - Reuses existing staged file if name matches
 - `SharedPreferences PREFS = "<pkg>_saf_uri_map"` maps `uri:<stagedPath>` → SAF `content://` URI
 - `safCommit(String path)` writes staged file to remembered SAF URI via `ContentResolver.openOutputStream`
+- `safDelete(String path)` deletes the SAF original when mapped, then removes staged copies and URI mappings
 - Falls back to matching by stem if exact path not found
 
 **Intent Handling:**
@@ -529,6 +530,7 @@ Methods:
 - `pick_save_blocking(id: u64, name: &str, timeout: Duration) -> Result<PickAnswer>`
 - `pick_folder_blocking(id: u64, timeout: Duration) -> Result<PickAnswer>`
 - `commit(path: &str) -> Result<()>`
+- `delete_document(path: &str) -> Result<()>`
 - `files_dir() -> Result<PathBuf>`
 - `intent_pending() -> Result<u32>`
 - `intent_poll() -> Result<Option<String>>`
@@ -1221,6 +1223,7 @@ adb shell appops set com.artcraft.<app> MANAGE_EXTERNAL_STORAGE allow
 | `lib/file_associations.py` | Intent filter registry (EXT_MIME, ASSOCIATIONS) |
 | `lib/app_icons.py` | Adaptive icon generation (mipmaps + monochrome) |
 | `lib/scrolling.sh` | Two-finger scroll/momentum patches for all apps |
+| `lib/wordcraft_mobile_ui.py` | WordCraft-only responsive Backstage UI and Recent-document deletion patches |
 | `lib/ime.sh` | Soft keyboard return patches (WordCraft) |
 | `lib/subcraft.sh` | SubCraft file handoff patch adding `files::deliver_android` |
 | `templates/android/SafActivity.java` | Shared Activity base (SAF, IME, permissions, fullscreen, etc.) |
@@ -1456,6 +1459,7 @@ File associations are added via `file_associations.py` which patches:
 - `safRequestFolder(long id)` - Launches ACTION_OPEN_DOCUMENT_TREE (API 21+)
 - `safPoll()` - Returns queued JSON results as string
 - `safCommit(String path)` - Writes staged file to SAF URI
+- `safDelete(String path)` - Deletes the SAF original and removes its staged copy
 - `intentPoll()` - Returns queued incoming file paths
 - `intentPending()` - Returns count of pending intents
 
@@ -1482,6 +1486,7 @@ impl Bridge {
     pub fn pick_save_blocking(id: u64, name: &str, timeout: Duration) -> Result<PickAnswer>
     pub fn pick_folder_blocking(id: u64, timeout: Duration) -> Result<PickAnswer>
     pub fn commit(path: &str) -> Result<()>
+    pub fn delete_document(path: &str) -> Result<()>
     pub fn files_dir() -> Result<PathBuf>
     pub fn intent_pending() -> Result<u32>
     pub fn intent_poll() -> Result<Option<String>>
@@ -1871,7 +1876,7 @@ bash build.sh -app
 ## 51. Version History & Changelog Notes
 
 ### 51.1 Generator Version
-`GENERATOR_VERSION = "67"` in lib/build-common.sh
+`GENERATOR_VERSION = "68"` in lib/build-common.sh
 Bump when launcher template changes significantly.
 
 ### 51.2 Builder Version
