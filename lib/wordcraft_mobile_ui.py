@@ -347,7 +347,8 @@ recent_list = r'''fn open_list(app: &mut WordApp, ui: &mut Ui) {
     let file_name = |p: &str| std::path::Path::new(p).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or(p.to_string());
     let names = shown.iter().map(|p| file_name(p)).collect::<Vec<_>>();
     for (p, name) in shown.iter().zip(&names) {
-        let row_width = ui.available_width().min(700.0).max(80.0);
+        let available = ui.available_rect_before_wrap();
+        let row_width = (available.right().min(ui.clip_rect().right()) - available.left()).clamp(0.0, 700.0);
         let can_delete = app.services.delete_file.is_some();
         let delete_width = if can_delete { 42.0 } else { 0.0 };
         let text_width = (row_width - 58.0 - delete_width).max(32.0);
@@ -432,7 +433,7 @@ fn show_delete_prompt(app: &mut WordApp, ctx: &egui::Context) {
     let mut erase = false;
     let mut cancel = false;
     let is_open = app.session.path.as_deref() == Some(std::path::Path::new(&path));
-    egui::Window::new(tl!("Удалить документ?"))
+    egui::Window::new(tl!("Delete document?"))
         .id(egui::Id::new("android_recent_delete_window"))
         .collapsible(false)
         .resizable(false)
@@ -440,16 +441,16 @@ fn show_delete_prompt(app: &mut WordApp, ctx: &egui::Context) {
         .open(&mut open)
         .show(ctx, |ui| {
             ui.set_max_width(width);
-            ui.label(tl!("Вы хотите только скрыть его из списка или полностью стереть файл из памяти устройства?"));
+            ui.label(tl!("Do you want to hide it from the list only, or permanently erase the file from this device?"));
             ui.add_space(8.0);
             if is_open {
-                ui.label(tl!("Перед удалением с устройства закройте этот документ."));
+                ui.label(tl!("Close this document before erasing it from the device."));
             }
             ui.horizontal_wrapped(|ui| {
-                hide = ui.button(tl!("Только из списка")).clicked();
-                let erase_label = egui::RichText::new(tl!("Стереть с устройства")).color(ui.visuals().error_fg_color);
+                hide = ui.button(tl!("Only from the list")).clicked();
+                let erase_label = egui::RichText::new(tl!("Erase from device")).color(ui.visuals().error_fg_color);
                 erase = ui.add_enabled(!is_open, egui::Button::new(erase_label)).clicked();
-                cancel = ui.button(tl!("Отмена")).clicked();
+                cancel = ui.button(tl!("Cancel")).clicked();
             });
         });
     if !open || cancel || hide || erase {
@@ -485,12 +486,29 @@ if legacy_helper_start != -1 and legacy_helper_end != -1:
     backstage_path.write_text(backstage_text)
 
 backstage_text = backstage_path.read_text()
+backstage_text = backstage_text.replace(
+    "let row_width = ui.available_width().min(700.0).max(80.0);",
+    "let available = ui.available_rect_before_wrap();\n"
+    "        let row_width = (available.right().min(ui.clip_rect().right()) - available.left()).clamp(0.0, 700.0);",
+)
 backstage_text = backstage_text.replace("request_recent_delete(app, ui.ctx(), p);", "request_recent_delete(ui.ctx(), p);")
 backstage_text = backstage_text.replace(
     "fn request_recent_delete(app: &mut WordApp, ctx: &egui::Context, path: &str)",
     "fn request_recent_delete(ctx: &egui::Context, path: &str)",
 )
 backstage_text = backstage_text.replace("ctx.screen_rect()", "ctx.content_rect()")
+for old, new in (
+    ('tl!("Удалить документ?")', 'tl!("Delete document?")'),
+    (
+        'tl!("Вы хотите только скрыть его из списка или полностью стереть файл из памяти устройства?")',
+        'tl!("Do you want to hide it from the list only, or permanently erase the file from this device?")',
+    ),
+    ('tl!("Перед удалением с устройства закройте этот документ.")', 'tl!("Close this document before erasing it from the device.")'),
+    ('tl!("Только из списка")', 'tl!("Only from the list")'),
+    ('tl!("Стереть с устройства")', 'tl!("Erase from device")'),
+    ('tl!("Отмена")', 'tl!("Cancel")'),
+):
+    backstage_text = backstage_text.replace(old, new)
 backstage_path.write_text(backstage_text)
 
 if changes:
