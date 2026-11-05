@@ -102,6 +102,23 @@ mod saf {
             }
         }
 
+        pub fn set_screen_orientation_locked(&self, locked: bool) -> Result<(), String> {
+            self.vm
+                .attach_current_thread(|env| -> jni::errors::Result<()> {
+                    let activity_raw = self.app.activity_as_ptr() as jni::sys::jobject;
+                    // SAFETY: AndroidApp retains this global Activity reference.
+                    let activity = unsafe { env.as_cast_raw::<JObject>(&activity_raw)? };
+                    env.call_method(
+                        &*activity,
+                        jni_str!("setScreenOrientationLocked"),
+                        jni_sig!("(Z)V"),
+                        &[JValue::Bool(locked)],
+                    )?;
+                    Ok(())
+                })
+                .map_err(|error| error.to_string())
+        }
+
         pub fn request_open(&self, id: u64, multiple: bool) -> Result<(), String> {
             self.request_open_with_extensions(id, multiple, "")
         }

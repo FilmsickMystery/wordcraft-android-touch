@@ -6,6 +6,7 @@ import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.graphics.Rect;
@@ -197,6 +198,12 @@ public final class __CLASS__ extends GameActivity {
             Log.w(TAG, "Could not read screen size; leaving UI scale at Auto", error);
             return false;
         }
+    }
+
+    /** Freeze the current display orientation, or restore the app's normal sensor rotation. */
+    public void setScreenOrientationLocked(boolean locked) {
+        runOnUiThread(() -> setRequestedOrientation(
+                locked ? ActivityInfo.SCREEN_ORIENTATION_LOCKED : ActivityInfo.SCREEN_ORIENTATION_SENSOR));
     }
 
     /**
@@ -1443,7 +1450,23 @@ public final class __CLASS__ extends GameActivity {
         String clean = name.replace('\\', '/');
         int slash = clean.lastIndexOf('/');
         if (slash >= 0) clean = clean.substring(slash + 1);
-        clean = clean.replaceAll("[^A-Za-z0-9._() -]", "_").trim();
+        StringBuilder safe = new StringBuilder(clean.length());
+        for (int offset = 0; offset < clean.length();) {
+            int codePoint = clean.codePointAt(offset);
+            offset += Character.charCount(codePoint);
+            int type = Character.getType(codePoint);
+            if (Character.isLetterOrDigit(codePoint)
+                    || type == Character.NON_SPACING_MARK
+                    || type == Character.COMBINING_SPACING_MARK
+                    || type == Character.ENCLOSING_MARK
+                    || codePoint == '.' || codePoint == '_' || codePoint == '('
+                    || codePoint == ')' || codePoint == ' ' || codePoint == '-') {
+                safe.appendCodePoint(codePoint);
+            } else {
+                safe.append('_');
+            }
+        }
+        clean = safe.toString().trim();
         if (clean.isEmpty() || clean.equals(".") || clean.equals("..")) return "untitled";
         return clean;
     }

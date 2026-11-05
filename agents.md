@@ -452,8 +452,9 @@ From app semver (ndk-build2 compatible).
 
 **File Staging:**
 - Copies picked documents to app-private external dir: `/storage/emulated/0/Android/data/<pkg>/files/media/`
+- WordCraft opens files delivered by Android through the normal `file.open` command using the staged path, so they are tracked as recent documents and saved back through their remembered SAF URI. The active path is re-tracked on later app launches when reopened from Recent.
 - Collision handling: adds ` (2)`, ` (3)` etc if name taken
-- Name sanitization
+- Name sanitization preserves Unicode letters and digits (including Cyrillic)
 - Reuses existing staged file if name matches
 - `SharedPreferences PREFS = "<pkg>_saf_uri_map"` maps `uri:<stagedPath>` → SAF `content://` URI
 - `safCommit(String path)` writes staged file to remembered SAF URI via `ContentResolver.openOutputStream`

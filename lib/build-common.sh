@@ -2007,8 +2007,8 @@ else:
 # How the launcher opens a document the system handed it (an ACTION_VIEW/ACTION_SEND intent it is
 # registered for), once per staged file. Each entry is the body of the shell's `open_incoming`, so it
 # can use `self.inner`, `self.saf_inbox` and the `saf` bridge helpers. Apps with an import inbox
-# receive name+bytes exactly like a file chosen in the picker; the others are asked to open the
-# staged path through their own document API. Apps absent here simply ignore incoming files.
+# receive name+bytes; path-based apps open the writable staged path so the file is a normal recent
+# document and later saves can be mirrored to its original SAF URI. Apps absent here ignore intents.
 INTENT_OPEN = {
     "designcraft": '''        if let Err(error) = self.inner.open_dropped(path) {
             log::error!("Could not open the incoming file {path}: {error}");
@@ -2023,9 +2023,8 @@ INTENT_OPEN = {
             Err(error) => log::error!("Could not read the incoming file {path}: {error}"),
         }
 ''',
-    "wordcraft": '''        match std::fs::read(path) {
-            Ok(bytes) => self.saf_inbox.lock().unwrap().push((saf::picker_name(path), bytes)),
-            Err(error) => log::error!("Could not read the incoming file {path}: {error}"),
+    "wordcraft": '''        if let Err(error) = self.inner.run("file.open", serde_json::json!({"path": path})) {
+            log::error!("Could not open the incoming WordCraft document {path}: {error}");
         }
 ''',
     "cadcraft": '''        self.inner.open_path(path);
@@ -2848,6 +2847,23 @@ icon = "@mipmap/ic_launcher"
     ime_state_ui_hook = (
         "\n        self.ime.sync_wordcraft_state(ui.ctx());" if app == "wordcraft" else ""
     )
+    orientation_field = "\n    orientation_locked: Option<bool>," if app == "wordcraft" else ""
+    orientation_new_init = ", orientation_locked: None" if app == "wordcraft" else ""
+    orientation_method = '''
+    fn sync_screen_orientation(&mut self, ctx: &egui::Context) {
+        let locked = ctx.data(|data| {
+            data.get_temp::<bool>(egui::Id::new("artcraft_android_screen_orientation_locked"))
+        }).unwrap_or(false);
+        if self.orientation_locked == Some(locked) {
+            return;
+        }
+        self.orientation_locked = Some(locked);
+        if let Err(error) = self.saf_bridge.set_screen_orientation_locked(locked) {
+            log::error!("Could not update screen orientation lock: {error}");
+        }
+    }
+''' if app == "wordcraft" else ""
+    orientation_ui_hook = "        self.sync_screen_orientation(ui.ctx());\n" if app == "wordcraft" else ""
     ime_poll_hook = (
         "self.ime.poll_with_clipboard_text(\n"
         "            raw,\n"
@@ -3258,9 +3274,16 @@ fn install_cadcraft_io() {
         saf_fields = "\n    saf_bridge: saf::Bridge,\n    saf_state: std::sync::Arc<SafState>,\n    saf_inbox: SafInbox,"
         saf_new_params = ", saf_bridge: saf::Bridge, saf_state: std::sync::Arc<SafState>, saf_inbox: SafInbox"
         saf_new_init = ", saf_bridge, saf_state, saf_inbox"
+        track_current_document = (
+            "        if let Some(path) = self.inner.session.path.as_deref() {\n"
+            "            self.saf_state.mirror.track(0, &path.to_string_lossy());\n"
+            "        }\n"
+            if app == "wordcraft" else ""
+        )
         saf_poll_method = '''
     /// Drain any finished Android file-picker requests and hand the results to the app.
     fn poll_file_picker(&mut self) {
+''' + track_current_document + '''\
         saf_poll(&self.saf_bridge, &self.saf_state, &self.saf_inbox);
     }
 '''
@@ -3431,6 +3454,7 @@ struct AndroidShell {{
     inner: {app_type},
     app: AndroidApp,
     ime: ime_bridge::ime::ImeBridge,
+    {orientation_field}
     modifiers: egui::Modifiers,
     fullscreen_applied: bool,
     probe: InputProbe,
@@ -3443,9 +3467,9 @@ struct AndroidShell {{
 impl AndroidShell {{
     fn new(mut inner: {app_type}, app: AndroidApp{saf_new_params}) -> Self {{
         {persist_new_body}let ime = ime_bridge::ime::ImeBridge::new(&app);
-        Self {{ inner, app, ime, modifiers: egui::Modifiers::default(), fullscreen_applied: false, probe: InputProbe::default(), bars_theme: None, back_pending: false, closing: false, close_asked: false{saf_new_init}{intent_init}{persist_new_init}{staged_new_init} }}
+        Self {{ inner, app, ime{orientation_new_init}, modifiers: egui::Modifiers::default(), fullscreen_applied: false, probe: InputProbe::default(), bars_theme: None, back_pending: false, closing: false, close_asked: false{saf_new_init}{intent_init}{persist_new_init}{staged_new_init} }}
     }}
-{saf_poll_method}{intent_method}{persist_methods}{staged_methods}
+{saf_poll_method}{intent_method}{persist_methods}{staged_methods}{orientation_method}
     /// Keep the system-bar icon contrast on the app's active theme: egui's light/dark choice is
     /// compared every frame and only a flip reaches Java (`apply_bar_appearance`), where the
     /// edge-to-edge bars get dark icons over a light canvas and light icons over a dark one.
@@ -3557,7 +3581,7 @@ impl eframe::App for AndroidShell {{
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {{
         system_fonts::install_system_fonts(ui.ctx());
 {touch_scrollbar_style_hook}
-        {inner_ui}{ime_state_ui_hook}
+        {inner_ui}{ime_state_ui_hook}{orientation_ui_hook}
         if self.back_pending {{
             self.back_pending = false;
             // A back press was mapped onto Escape. If the app consumed that Escape (a dialog

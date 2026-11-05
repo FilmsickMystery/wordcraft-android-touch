@@ -58,7 +58,8 @@ ArtCraft Android is not a stripped-down mobile edition. The applications are bui
 - **Storage Access Framework (SAF):** Open files and choose save destinations using Android's system document picker.
 - **Direct document access:** Work with files selected from Android document providers, including supported cloud storage providers and external storage locations.
 - **Save changes back:** SAF integration handles document staging and writes updated content back to the selected document.
-- **Open with:** Open supported files directly from compatible file managers and other Android applications.
+- **Open with:** Open supported files from compatible file managers and other Android applications; WordCraft records these as recent documents and saves changes back to the selected file.
+- **Unicode filenames:** Document names with Cyrillic and other Unicode letters are preserved.
 - **File sharing:** Receive files through Android's sharing and intent mechanisms where applicable.
 - **Drag and drop:** Open files by dragging them from compatible applications, including file managers and browsers.
 - **File associations:** A shared registry connects supported file types with the appropriate ArtCraft application.
@@ -77,6 +78,7 @@ ArtCraft Android adapts the applications' input handling to Android while preser
 - **International text input:** Support for composed text and non-English input through Android's input system.
 - **System clipboard:** Copy, cut, and paste through Android's clipboard, including keyboard shortcuts.
 - **Back-button integration:** Android Back is mapped to the appropriate application behavior where supported by the runtime.
+- **WordCraft rotation lock:** Lock the current screen orientation from the lower-left control in the File menu; the control follows the expanded or collapsed sidebar.
 
 Connect a keyboard and mouse, use a trackpad, or work directly on a touchscreen. The applications remain fully featured regardless of the input method.
 

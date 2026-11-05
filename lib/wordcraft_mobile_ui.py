@@ -263,6 +263,34 @@ backstage_show = r'''pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 }
             }
             ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
+                let orientation_id = egui::Id::new("artcraft_android_screen_orientation_locked");
+                let orientation_locked = ui.ctx().data(|data| data.get_temp::<bool>(orientation_id)).unwrap_or(false);
+                let (r, _) = ui.allocate_exact_size(vec2(nav_width, 44.0), Sense::hover());
+                let center = pos2(if collapsed { r.center().x } else { r.min.x + 26.0 }, r.center().y);
+                let button_rect = Rect::from_center_size(center, vec2(36.0, 36.0));
+                let description = if orientation_locked { "Unlock screen rotation" } else { "Lock screen rotation" };
+                let rotation = ui.interact(button_rect, ui.make_persistent_id("android_screen_rotation"), Sense::click());
+                rotation.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, tl!(description)));
+                ui.painter().circle_filled(
+                    center,
+                    18.0,
+                    if orientation_locked { egui::Color32::from_rgb(224, 138, 0) }
+                    else if rotation.hovered() { egui::Color32::from_white_alpha(46) }
+                    else { egui::Color32::from_white_alpha(26) },
+                );
+                ui.painter().text(center, Align2::CENTER_CENTER, "↻", semibold(22.0), egui::Color32::WHITE);
+                if !collapsed {
+                    ui.painter().text(
+                        pos2(r.min.x + 52.0, r.center().y),
+                        Align2::LEFT_CENTER,
+                        tl!(description),
+                        regular(13.0),
+                        egui::Color32::WHITE,
+                    );
+                }
+                if rotation.on_hover_text(tl!(description)).clicked() {
+                    ui.ctx().data_mut(|data| data.insert_temp(orientation_id, !orientation_locked));
+                }
                 for (label, id, icon) in [("About", "about", "help"), ("Discord community", "discord", "discord")] {
                     let (r, resp) = ui.allocate_exact_size(vec2(nav_width, 32.0), Sense::click());
                     resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), tl!(label)));
