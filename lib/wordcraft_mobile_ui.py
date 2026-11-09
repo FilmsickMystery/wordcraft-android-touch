@@ -246,7 +246,7 @@ backstage_show = r'''pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 if !collapsed {
                     ui.painter().text(
                         pos2(r.min.x + 52.0, r.center().y),
-                        Align2::LEFT_CENTER,
+                        egui::Align2::LEFT_CENTER,
                         tl!(label),
                         if active { semibold(14.0) } else { medium(14.0) },
                         ink,
@@ -278,11 +278,11 @@ backstage_show = r'''pub fn show(app: &mut WordApp, ui: &mut Ui) {
                     else if rotation.hovered() { egui::Color32::from_white_alpha(46) }
                     else { egui::Color32::from_white_alpha(26) },
                 );
-                ui.painter().text(center, Align2::CENTER_CENTER, "↻", semibold(22.0), egui::Color32::WHITE);
+                ui.painter().text(center, egui::Align2::CENTER_CENTER, "↻", semibold(22.0), egui::Color32::WHITE);
                 if !collapsed {
                     ui.painter().text(
                         pos2(r.min.x + 52.0, r.center().y),
-                        Align2::LEFT_CENTER,
+                        egui::Align2::LEFT_CENTER,
                         tl!(description),
                         regular(13.0),
                         egui::Color32::WHITE,
@@ -300,7 +300,7 @@ backstage_show = r'''pub fn show(app: &mut WordApp, ui: &mut Ui) {
                     let icon_x = if collapsed { r.center().x } else { r.min.x + 22.0 };
                     icons::paint(ui.painter(), Rect::from_center_size(pos2(icon_x, r.center().y), vec2(18.0, 18.0)), icon, egui::Color32::WHITE, egui::Color32::WHITE);
                     if !collapsed {
-                        ui.painter().text(pos2(r.min.x + 38.0, r.center().y), Align2::LEFT_CENTER, tl!(label), regular(13.0), egui::Color32::WHITE);
+                        ui.painter().text(pos2(r.min.x + 38.0, r.center().y), egui::Align2::LEFT_CENTER, tl!(label), regular(13.0), egui::Color32::WHITE);
                     }
                     if resp.clicked() {
                         if id == "discord" {
