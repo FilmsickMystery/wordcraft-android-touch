@@ -18,6 +18,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.CancellationSignal;
 import android.os.Environment;
+import android.os.Looper;
 import android.os.ParcelFileDescriptor;
 import android.os.SystemClock;
 import android.print.PageRange;
@@ -1007,18 +1008,27 @@ public final class __CLASS__ extends GameActivity {
      * calls ALooper_wake), so it is what wakes the loop. KEYCODE_UNKNOWN reaches winit as
      * Key::Unidentified, which no widget acts on: the app sees a wake-up and nothing else. Both
      * the press and the release go, or the key would look held down.
+     * InputConnection callbacks may run off the main looper, so GameActivity receives the wake
+     * events on the Activity thread.
      */
     private void queueImeEvent(String event) {
         imeEvents.offer(event);
-        try {
-            super.onKeyDown(
-                    KeyEvent.KEYCODE_UNKNOWN,
-                    new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_UNKNOWN));
-            super.onKeyUp(
-                    KeyEvent.KEYCODE_UNKNOWN,
-                    new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_UNKNOWN));
-        } catch (Throwable error) {
-            Log.w(TAG, "Could not wake the native loop for a keyboard event", error);
+        Runnable wakeNativeLoop = () -> {
+            try {
+                super.onKeyDown(
+                        KeyEvent.KEYCODE_UNKNOWN,
+                        new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_UNKNOWN));
+                super.onKeyUp(
+                        KeyEvent.KEYCODE_UNKNOWN,
+                        new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_UNKNOWN));
+            } catch (RuntimeException error) {
+                Log.w(TAG, "Could not wake the native loop for a keyboard event", error);
+            }
+        };
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            wakeNativeLoop.run();
+        } else {
+            runOnUiThread(wakeNativeLoop);
         }
     }
 

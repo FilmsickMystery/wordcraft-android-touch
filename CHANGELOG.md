@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-11-09
+
+### WordCraft Android
+
+- Added a screen-rotation lock toggle at the lower-left of the sidebar. It locks the current
+  orientation and restores sensor-based rotation when unlocked; the control moves with the sidebar
+  and stays clear of the main menu buttons.
+- Updated the vendored `egui-wgpu` crate from 0.36.2 to 0.37.0, including its source and dependency
+  APIs, to match WordCraft 0.17 and its pinned `storytold/egui` revision.
+- Preserved Android surface-recovery behavior: release the old surface before recreating it, and
+  discard a lost Android surface so it can be recreated for the current window.
+- Applied the vendored `egui-wgpu` patch to both crates.io and the pinned `storytold/egui` Git
+  source, including on repeated builds.
+- Routed IME wake events through the Activity's main looper before forwarding them to GameActivity's
+  native input queue, avoiding calls to its input callbacks from the IME thread.
+
 ## 2026-11-03
 
 ### WordCraft Android — upstream 0.15.0

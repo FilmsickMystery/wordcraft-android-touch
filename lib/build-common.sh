@@ -4009,23 +4009,50 @@ PY
 # that (ERROR_NATIVE_WINDOW_IN_USE_KHR) and wgpu panics on the error, so an app whose surface was
 # lost — the app coming back from a file picker, for instance — died with it. Vendor the builder's
 # patched egui-wgpu, which releases the old surface first, and patch it into the workspace.
+# WordCraft pins egui-wgpu through the storytold/egui Git source, so patch that source too;
+# `[patch.crates-io]` alone would leave the Git workspace's package untouched.
 echo "Vendoring the surface-fixing egui-wgpu for $TITLE..."
 rm -rf "$SRC/vendor/egui-wgpu"
 cp -a "$ROOT/vendor/egui-wgpu" "$SRC/vendor/egui-wgpu"
 python3 - "$SRC/Cargo.toml" <<'PY'
 from pathlib import Path
+import re
 import sys, tomllib
 p = Path(sys.argv[1])
 s = p.read_text()
+manifest = tomllib.loads(s)
+crate_patches = manifest.get("patch", {}).get("crates-io", {})
+original_patch = crate_patches.get("egui-wgpu", {})
+git_url = original_patch.get("git") if isinstance(original_patch, dict) else None
+if not git_url:
+    for crate in ("egui", "eframe", "egui-winit"):
+        source_patch = crate_patches.get(crate, {})
+        if isinstance(source_patch, dict) and source_patch.get("git"):
+            git_url = source_patch["git"]
+            break
+if not git_url:
+    for source, source_patches in manifest.get("patch", {}).items():
+        if source != "crates-io" and "egui-wgpu" in source_patches:
+            git_url = source
+            break
 entry = 'egui-wgpu = { path = "vendor/egui-wgpu" }'
-import re
-s = re.sub(r'^\s*egui-wgpu\s*=\s*\{.*?\}\s*(?:#.*)?\n?', '', s, flags=re.M)
-if entry not in s:
-    header = "[patch.crates-io]"
-    s = (s.replace(header, header + "\n" + entry, 1) if header in s
-         else s.rstrip() + "\n\n" + header + "\n" + entry + "\n")
-    tomllib.loads(s)
-    p.write_text(s)
+
+def upsert_patch(text, section, patch_entry):
+    header = f"[{section}]"
+    pattern = re.compile(rf"(?ms)^{re.escape(header)}[ \t]*\n(.*?)(?=^\[|\Z)")
+    match = pattern.search(text)
+    if match:
+        body = re.sub(r"^[ \t]*egui-wgpu[ \t]*=.*(?:\n|$)", "", match.group(1), flags=re.M)
+        body = patch_entry + "\n" + body.lstrip("\n")
+        return text[:match.start(1)] + body + text[match.end(1):]
+    return text.rstrip() + "\n\n" + header + "\n" + patch_entry + "\n"
+
+s = upsert_patch(s, "patch.crates-io", entry)
+if git_url:
+    s = upsert_patch(s, f'patch."{git_url}"', entry)
+
+tomllib.loads(s)
+p.write_text(s)
 PY
 
 # Every launcher uses the builder's vendored android-activity: the game-activity backend now
